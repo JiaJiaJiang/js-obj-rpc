@@ -34,7 +34,7 @@ gulp.task('build',function(){
 		.bundle()
 		.pipe(source(`./index.js`))
 		.pipe(buffer())
-		.pipe(uglify(options))
+		//.pipe(uglify(options))
 		.on('error',function(e){
 			console.error(e);
 		})

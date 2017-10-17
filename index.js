@@ -15,20 +15,25 @@ data pack head structure
 	...-...	data
 
 if the pack is a request without response requirement,there is no id in the pack head
+
 if the first 2 bits are 11(error response),and the 3rd part(data type) is not 1(data of the error response must be a string which is the message of the Error),
 	the 3rd part becomes a control code
-	2:cancel the operation of the id for which was requested (if possible)
+	2:cancel the remote callback of the id for which was requested (if possible)
+
 */
 
 (function(global){
 'use strict';
 let NODEMODE=global.process&&global.process.release&&global.process.release.name=='node';
-if(!global.Buffer)var Buffer;//prevent browser from adding Buffer.js
-const utf8Util=require('utf8util');
-
+if(!NODEMODE){
+	var utf8Util=require('utf8util');
+}else{
+	var Buffer=global.Buffer;
+}
+var events=require('events');
 
 //Polyfill
-Number.MAX_SAFE_INTEGER=0x1fffffffffffff;
+Number.MAX_SAFE_INTEGER||(Number.MAX_SAFE_INTEGER=0x1fffffffffffff);
 if(!Number.isSafeInteger)
 Number.isSafeInteger=function(a){return Number.isInteger(a)&&Math.abs(a)<=Number.MAX_SAFE_INTEGER};
 if(!Number.isInteger)
@@ -41,9 +46,13 @@ if(SUPPORT_ARRAYBUFFER && !ArrayBuffer.isView){//ArrayBuffer.isView
 	ArrayBuffer.isView=a=>!!((TypedArray&&(a instanceof TypedArray))||(global.DataView&&(a instanceof DataView)));
 }
 
+const defaultRequestOpt={
+	requireResponse:true,
+};
+
 //the object for packing and unpacking data
 class Packer{		//data packer
-	static pack(packType,id,data){
+	static pack(packType,id,data,dataType){
 		let idByte=0,
 			isError=false,pack;
 		if(data instanceof Error){
@@ -59,19 +68,21 @@ class Packer{		//data packer
 			if(id>=256){idByte=2;}
 			else if(id>0){idByte=1;}
 		}
-		
 		//bits
-		const 	b0=(packType===0)?1:0,//b0(pack type)
+		const 	b0=(packType===0)?0:1,//b0(pack type)
 				b1=(b0===0 && id===0) || ((b0===1 && isError)?1:0);//b1
 		let 	b2t4=0,b5t7;
 
 		//b2t4(data type)
-		switch(data){
+		if(dataType!==undefined){
+			b2t4=dataType;
+		}else switch(data){
 			case true:b2t4=2;break;
 			case false:b2t4=3;break;
 			case undefined:b2t4=4;break;
 			case null:b2t4=5;break;
 			default:{//data that has data body
+				let toBuf=false;
 				if(data instanceof ArrayBuffer || ArrayBuffer.isView(data)){//buffer
 					b2t4=0;
 					if(!(data instanceof Uint8Array))
@@ -83,31 +94,35 @@ class Packer{		//data packer
 					pack=new Uint8Array(idByte+5);//write to buffer directly
 					let dv=new DataView(pack.buffer,idByte+1,4);
 					dv.setInt32(data);
+				}else if(typeof data === 'string'){
+					toBuf=true;
 				}else{//serialized
 					b2t4=6;
 					data=JSON.stringify(data);
+					toBuf=true;
 				}
 				//convert string to buffer
-				if(typeof data === 'string'){
+				if(toBuf){//todo
 					b2t4||(b2t4=1);
-					if(NODEMODE){
-						pack=Buffer.allocUnsafe(idByte+1+Buffer.byteLength(data,'utf8'));
-						pack.write(data,idByte+1);
-						pack.fill(0,0,idByte+1);
+					if(NODEMODE===true){
+						let d=Buffer.from(data,'utf8');
+						pack=Buffer.allocUnsafe(idByte+1+d.byteLength);
+						pack.fill(d,idByte+1);
 					}else{
 						pack=utf8Util.utf8ToBytes(data,idByte+1);
 					}
 				}
 			}
 		}
+		if(b2t4>7 || b2t4<0)throw(new Error('Wrong data type'));
 		//write head
-		if(!pack)pack=NODEMODE?Buffer.alloc(1+idByte):new Uint8Array(1+idByte);
-		if(idByte){//write id
+		if(!pack)pack=(NODEMODE===true)?Buffer.alloc(1+idByte):new Uint8Array(1+idByte);
+		if(idByte>0){//write id
 			for(let byte=idByte;byte;byte--){
 				pack[byte]=(id>>((idByte-byte)*8))&0xFF;
 			}
 		}
-		pack[0]=(b0<<7) | (b1<<6) | (b2t4<<3) | idByte;
+		pack[0]=((b0<<7) | (b1<<6) | (b2t4<<3) | idByte);
 
 		return pack;
 	}
@@ -124,38 +139,36 @@ class Pack{		//data pack
 		if(!(buffer instanceof Uint8Array))buffer=new Uint8Array(buffer);
 
 		this.buffer=buffer;
+		this.head=buffer.subarray(0,1)[0];
 		this.dataType=(this.head>>3&0b111);
-		this.head=buffer.subArray(0,1)[0];
-		this.isRequest=(this.head&0b10000000)===0;
+		this.isRequest=((this.head&0b10000000)===0);
 		if(this.isRequest===true){
-			this.requireResponse=(this.head&0b01000000)===0;
+			this.requireResponse=((this.head&0b01000000)===0);
 		}else{
-			this.isError=(this.head&0b01000000)===0;
+			this.isError=((this.head&0b01000000)===0);
 			if(this.isError===true && this.dataType!==1){
 				this.isError=false;
 				this.isCtrl=true;
 			}
 		}
 		this.idByte=this.head&0b111;//idBytes
-		if(this.requireResponse===true && this.idByte!==0){
+		if(this.idByte!==0){
 			this.id=0;
 			for(let i=this.idByte,bytes=this.idByte;i--;bytes--){//get id
-				this.id+=(this.head[bytes]<<((this.idByte-bytes)*8));
+				this.id|=(this.buffer[bytes]<<((bytes-1)*8));
 			}
 		}
 	}
 	getData(){
 		switch(this.dataType){
 			case 0:return this._dataBuffer();
-			case 1:{
-				return this._readString();
-			}
+			case 1:return this._readString();
 			case 2:return true;
 			case 3:return false;
 			case 4:return undefined;
 			case 5:return null;
 			case 6:{
-				if(NODEMODE)return JSON.parse(_dataBuffer());
+				if(NODEMODE===true)return JSON.parse(this._dataBuffer());
 				else return JSON.parse(this._readString());
 			}
 			case 7:{
@@ -166,78 +179,162 @@ class Pack{		//data pack
 		}
 	}
 	_dataBuffer(){
-		return this.buffer.subArray(this.idByte+1);
+		return this.buffer.subarray(this.idByte+1);
 	}
 	_readString(){
-		if(NODEMODE)return Buffer.from(this.buffer,this.idByte+1).toString('utf8');//use buffer for node
+		if(NODEMODE===true)return Buffer.from(this.buffer,this.idByte+1).toString('utf8');//use buffer for node
 		else{
-			return utf8Util.utf8ToBytes(this.buffer.subArray(this.idByte+1));
+			return utf8Util.bytesToUTF8(this.buffer.subarray(this.idByte+1));
 		}
 	}
 }
 
-class request{
-	constructor(id,callback){
-		this._stat=false;
+class Request{
+	constructor(rpc,id,callback){
+		this._stat=0;//0:inited 1:requested 2:responsed 3:deleted
 		this.id=id;
+		this.rpc=rpc;
+		this.timeout;
+		this.cb=callback;
 	}
-	cancel(){
-		if(!this._stat)return false;
+	callback(data){
+		if(this._stat<2 && this.cb)
+			this.cb(data);
+	}
+	_finish(){
+		if(this._stat>1)return;
+		this._stat=2;
+		if(this.timeout){
+			clearTimeout(this.timeout);
+			this.timeout=null;
+		}
+	}
+	delete(){
+		if(this._stat===3)return false;
+		if(this.rpc.sendedList.get(this.id) === this)
+			this.rpc.sendedList.delete(this.id);
+		this._finish();
+		this.cb=null;
+		this.rpc=null;
+		this._stat=3;
+		return true;
+	}
+	_timeout(){
+		if(!this.cb)return;
+		this.cb(Error('Time out'));
+	}
+	setTimeout(time=this.rpc.timeout){
+		this.timeout=setTimeout(()=>{
+			this._timeout();
+			this.delete();
+		},time);
 	}
 }
 
-class RPC{		//RPC handle
+/*class Response extends events{
+
+}*/
+
+class RPC extends events{		//RPC handle
 	constructor(){
-		this.funcList=[];
+		super();
+		this.sendedList=new Map();
+		//this.receivedList=new Map();
 		this._count=0;
-		this._packer=new Packer(this);
-		this.lastUsedId=0;
+		this.lastUsedId=1;
 		this.timeout=30000;
 	}
-	getId(){
+	get Packer(){return Packer;}
+	_getId(){
 		if(this._count===4294967296)return false;
-		do{
+		while(this.sendedList.has(this.lastUsedId)){
 			this.lastUsedId++;
 			if(this.lastUsedId===4294967296)this.lastUsedId=1;
-		}while(!this.funcList[this.lastUsedId]);
+		}
 		return this.lastUsedId;
 	}
 	handle(data){//handle received data
 		let pack=Packer.unpack(data);
 		if(pack.isCtrl===true){//it's a control pack
-			return this._control(pack.dataType,pack.id);
+			return this._controlHandle(pack.dataType,pack.id);
 		}else if(pack.isRequest===true){//it's a request
-
+			//this.receivedList.set(pack.id);
+			this.emit('request',pack);
 		}else{//it's a response
-
+			this._responseHandle(pack);
 		}
 	}
-	request(data,callback,opt){	//if callback not set,it will return a Promise(if supported)
-		let pack=this._packer;
-		if(!(callback instanceof Function) && global.Promise)
-			return new Promise((resolve,reject)=>{
-
-			});
+	request(data,callback,opt){	//if callback not set,it will be a request without response requirement.
+		if(typeof opt!== 'object')opt={};
+		opt.__proto__=defaultRequestOpt;
+		if(typeof callback !== 'function')opt.requireResponse=false;
+		let id;
+		if(opt.requireResponse===true){
+			if((id=this._getId())===false)throw(new Error('No free id.'));
+		}else{
+			id=0;
+		}
+		
+		let pack=Packer.pack(0,id,data),request;
+		if(id!==0){
+			request=new Request(this,id,callback);
+			this.sendedList.set(id,request);
+			request.setTimeout(opt.timeout||this.timeout);
+		}
+		this.emit('data',pack);
+		return request;
 	}
-	response(id,data,opt){
-//todo
+	response(pack,data){
+		if(pack.requireResponse===false)
+			throw(new Error('The request dosen\'t need a response'));
+		/*if(!this.receivedList.has(pack.id)){
+			//throw(new Error('No id:'+pack.id));	//ignore ids that not exist
+			return;
+		}*/
+		let rePack=Packer.pack(1,pack.id,data);
+		//this.receivedList.delete(pack.id);
+		console.log('repack:',rePack)
+		this.emit('data',rePack);
 	}
-	get(id){
-//?
+	/*_response(pack,data){
+		if(!pack.requireResponse)return;
+		this.response(pack.id,data);
+	}*/
+	control(code,id){
+		let pack=Packer.pack(0,id,null,code);
+		this.emit('data',pack);
 	}
-	_control(code,id){
+	_controlHandle(code,id){//received control pack
 		switch(code){
 			case 2:{//cancel an operation
-//todo
+				/*if(!this.receivedList.has(pack.id))
+					throw(new Error('No id:'+pack.id));
+				this.receivedList.delete(id);*/
 				break;
+			}
+			default:{
+				this.emit('error',new Error('Unkonown control code:'+code));
 			}
 		}
 	}
-	/*------------------------*/
-	data(data,callback){}//rewrite this method to resolve data.callback(id,response data)
+	_responseHandle(pack){//handle received response
+		let req=this.sendedList.get(pack.id);
+		if(!req){
+			console.debug('no id:'+pack.id);
+			return;
+		}
+		if(pack.isError){
+			req.callback(pack.data);
+		}else{
+			req.callback(null,pack.data);
+		}
+		req.delete();
+	}
 }
 
 
 module.exports = RPC;
 
 })((0,eval)('this'));
+
+
