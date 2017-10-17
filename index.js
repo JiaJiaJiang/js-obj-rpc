@@ -145,7 +145,7 @@ class Pack{		//data pack
 		if(this.isRequest===true){
 			this.requireResponse=((this.head&0b01000000)===0);
 		}else{
-			this.isError=((this.head&0b01000000)===0);
+			this.isError=((this.head&0b01000000)!==0);
 			if(this.isError===true && this.dataType!==1){
 				this.isError=false;
 				this.isCtrl=true;
@@ -178,13 +178,16 @@ class Pack{		//data pack
 			}
 		}
 	}
+	get data(){
+		return this.getData();
+	}
 	_dataBuffer(){
 		return this.buffer.subarray(this.idByte+1);
 	}
 	_readString(){
-		if(NODEMODE===true)return Buffer.from(this.buffer,this.idByte+1).toString('utf8');//use buffer for node
+		if(NODEMODE===true)return Buffer.from(this._dataBuffer()).toString('utf8');//use buffer for node
 		else{
-			return utf8Util.bytesToUTF8(this.buffer.subarray(this.idByte+1));
+			return utf8Util.bytesToUTF8(this._dataBuffer());
 		}
 	}
 }
@@ -197,9 +200,9 @@ class Request{
 		this.timeout;
 		this.cb=callback;
 	}
-	callback(data){
+	callback(...args){
 		if(this._stat<2 && this.cb)
-			this.cb(data);
+			this.cb(...args);
 	}
 	_finish(){
 		if(this._stat>1)return;
@@ -231,15 +234,22 @@ class Request{
 	}
 }
 
-/*class Response extends events{
+class Response{
+	constructor(rpc,pack){
+		this.rpc=rpc;
+		this.pack=pack;
+	}
+	send(data){
+		this.rpc._response(this,data);
+	}
+}
 
-}*/
 
 class RPC extends events{		//RPC handle
 	constructor(){
 		super();
 		this.sendedList=new Map();
-		//this.receivedList=new Map();
+		this.receivedList=new Map();
 		this._count=0;
 		this.lastUsedId=1;
 		this.timeout=30000;
@@ -258,8 +268,7 @@ class RPC extends events{		//RPC handle
 		if(pack.isCtrl===true){//it's a control pack
 			return this._controlHandle(pack.dataType,pack.id);
 		}else if(pack.isRequest===true){//it's a request
-			//this.receivedList.set(pack.id);
-			this.emit('request',pack);
+			this._requestHandle(pack);
 		}else{//it's a response
 			this._responseHandle(pack);
 		}
@@ -284,22 +293,20 @@ class RPC extends events{		//RPC handle
 		this.emit('data',pack);
 		return request;
 	}
-	response(pack,data){
+	_response(res,data){
+		let pack=res.pack;
 		if(pack.requireResponse===false)
 			throw(new Error('The request dosen\'t need a response'));
-		/*if(!this.receivedList.has(pack.id)){
+		if(this.receivedList.get(pack.id) !== res){
+			console.debug('Missing pack');
 			//throw(new Error('No id:'+pack.id));	//ignore ids that not exist
 			return;
-		}*/
+		}
 		let rePack=Packer.pack(1,pack.id,data);
-		//this.receivedList.delete(pack.id);
-		console.log('repack:',rePack)
+		this.receivedList.delete(pack.id);
+		//console.log('repack:',rePack)
 		this.emit('data',rePack);
 	}
-	/*_response(pack,data){
-		if(!pack.requireResponse)return;
-		this.response(pack.id,data);
-	}*/
 	control(code,id){
 		let pack=Packer.pack(0,id,null,code);
 		this.emit('data',pack);
@@ -307,9 +314,9 @@ class RPC extends events{		//RPC handle
 	_controlHandle(code,id){//received control pack
 		switch(code){
 			case 2:{//cancel an operation
-				/*if(!this.receivedList.has(pack.id))
+				if(!this.receivedList.has(pack.id))
 					throw(new Error('No id:'+pack.id));
-				this.receivedList.delete(id);*/
+				this.receivedList.delete(id);
 				break;
 			}
 			default:{
@@ -317,12 +324,22 @@ class RPC extends events{		//RPC handle
 			}
 		}
 	}
+	_requestHandle(pack){
+		if(this.receivedList.has(pack.id)){
+			this.response(pack,Error('Duplicate id'));
+			return;
+		}
+		let res=new Response(this,pack);
+		this.receivedList.set(pack.id,res);
+		this.emit('request',res);
+	}
 	_responseHandle(pack){//handle received response
 		let req=this.sendedList.get(pack.id);
 		if(!req){
 			console.debug('no id:'+pack.id);
 			return;
 		}
+		console.log('handle pack',pack)
 		if(pack.isError){
 			req.callback(pack.data);
 		}else{

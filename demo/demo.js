@@ -18,10 +18,15 @@ clientRpc.on('data',function(data){
 //server
 const serverRpc=new RPC();
 
-serverRpc.on('request',function(pack){
-	console.log('receive a request',pack);
+serverRpc.on('request',function(res){
+	console.log('receive a request',res.pack);
 
-	serverRpc.response(pack,'poi');
+	//setTimeout(()=>{
+	if(Math.random()>0.5)
+		res.send('poi');
+	else
+		res.send(Error('A random error'));
+	//},6000);
 });
 
 serverRpc.on('data',function(data){
@@ -33,10 +38,10 @@ serverRpc.on('data',function(data){
 function send(){
 	console.log('client:send req');
 	clientRpc.request('sth',function(err,data){
-		console.log('response',data);
+		console.log('response',arguments);
 	});
 }
 
-setInterval(send,5000);
+setInterval(send,3000);
 
 send();
