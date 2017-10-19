@@ -22,7 +22,7 @@ gulp.task('build',function(){
 		};
 
 	return browserify({
-			entries: 'index.js',
+			entries: 'rpc.js',
 			basedir:'./',
 			debug: true,
 		}).transform(
@@ -32,13 +32,13 @@ gulp.task('build',function(){
 			})
 		)
 		.bundle()
-		.pipe(source(`./index.js`))
+		.pipe(source(`./rpc.js`))
 		.pipe(buffer())
 		//.pipe(uglify(options))
 		.on('error',function(e){
 			console.error(e);
 		})
-		.pipe(rename('rpc.js'))
+		//.pipe(rename('rpc.js'))
 		.pipe(gulp.dest('./dist'));
 });
 

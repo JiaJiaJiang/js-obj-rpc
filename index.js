@@ -225,6 +225,7 @@ class Request{
 	_timeout(){
 		if(!this.cb)return;
 		this.cb(Error('Time out'));
+		this.rpc.control(2,this.id);
 	}
 	setTimeout(time=this.rpc.timeout){
 		this.timeout=setTimeout(()=>{
@@ -234,13 +235,17 @@ class Request{
 	}
 }
 
-class Response{
+class Response extends events{
 	constructor(rpc,pack){
+		super();
 		this.rpc=rpc;
 		this.pack=pack;
 	}
 	send(data){
 		this.rpc._response(this,data);
+	}
+	abort(){
+		this.emit('abort');
 	}
 }
 
@@ -251,22 +256,22 @@ class RPC extends events{		//RPC handle
 		this.sendedList=new Map();
 		this.receivedList=new Map();
 		this._count=0;
-		this.lastUsedId=1;
+		this._currentID=1;
 		this.timeout=30000;
 	}
 	get Packer(){return Packer;}
 	_getId(){
 		if(this._count===4294967296)return false;
-		while(this.sendedList.has(this.lastUsedId)){
-			this.lastUsedId++;
-			if(this.lastUsedId===4294967296)this.lastUsedId=1;
+		while(this.sendedList.has(this._currentID)){
+			this._currentID++;
+			if(this._currentID===4294967296)this._currentID=1;
 		}
-		return this.lastUsedId;
+		return this._currentID;
 	}
 	handle(data){//handle received data
 		let pack=Packer.unpack(data);
 		if(pack.isCtrl===true){//it's a control pack
-			return this._controlHandle(pack.dataType,pack.id);
+			this._controlHandle(pack.dataType,pack.id);
 		}else if(pack.isRequest===true){//it's a request
 			this._requestHandle(pack);
 		}else{//it's a response
@@ -293,6 +298,10 @@ class RPC extends events{		//RPC handle
 		this.emit('data',pack);
 		return request;
 	}
+	control(code,id){
+		let pack=Packer.pack(0,id,null,code);
+		this.emit('data',pack);
+	}
 	_response(res,data){
 		let pack=res.pack;
 		if(pack.requireResponse===false)
@@ -304,18 +313,15 @@ class RPC extends events{		//RPC handle
 		}
 		let rePack=Packer.pack(1,pack.id,data);
 		this.receivedList.delete(pack.id);
-		//console.log('repack:',rePack)
 		this.emit('data',rePack);
-	}
-	control(code,id){
-		let pack=Packer.pack(0,id,null,code);
-		this.emit('data',pack);
 	}
 	_controlHandle(code,id){//received control pack
 		switch(code){
 			case 2:{//cancel an operation
-				if(!this.receivedList.has(pack.id))
+				let res=this.receivedList.has(pack.id);
+				if(!res)
 					throw(new Error('No id:'+pack.id));
+				res.abort();
 				this.receivedList.delete(id);
 				break;
 			}
@@ -339,18 +345,19 @@ class RPC extends events{		//RPC handle
 			console.debug('no id:'+pack.id);
 			return;
 		}
-		console.log('handle pack',pack)
+		//console.log('handle pack',pack)
 		if(pack.isError){
 			req.callback(pack.data);
 		}else{
 			req.callback(null,pack.data);
 		}
+		if(pack.id<this._currentID)this._currentID=pack.id;
 		req.delete();
 	}
 }
 
-
 module.exports = RPC;
+
 
 })((0,eval)('this'));
 

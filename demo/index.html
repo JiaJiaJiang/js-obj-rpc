@@ -1,9 +1,9 @@
-/*
-rpc demo (for node)
-*/
+<script src="../dist/rpc.js"></script>
 
-//both
-const RPC=require('../index.js');
+<script>
+/*
+rpc demo (for browser)
+*/
 
 //clent
 const clientRpc=new RPC();
@@ -49,3 +49,4 @@ function send(){
 setInterval(send,3000);
 
 send();
+</script>
