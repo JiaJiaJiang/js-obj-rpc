@@ -10,7 +10,7 @@ npm i js-rpc
 ## In Node.js
 Directly require the pack.
 ```javascript
-var jsRPC=require('js-rpc');
+var rpc=require('js-rpc');
 ```
 
 ## In browser
@@ -21,4 +21,8 @@ gulp build
 then use the script in the dist directory
 ```html
 <script src="***/dist/rpc.js"></script>
+
+<script>
+var rpc=new RPC();
+</script>
 ```

@@ -255,13 +255,12 @@ class RPC extends events{		//RPC handle
 		super();
 		this.sendedList=new Map();
 		this.receivedList=new Map();
-		this._count=0;
 		this._currentID=1;
 		this.timeout=30000;
 	}
 	get Packer(){return Packer;}
 	_getId(){
-		if(this._count===4294967296)return false;
+		if(this.sendedList.size===4294967296)return false;
 		while(this.sendedList.has(this._currentID)){
 			this._currentID++;
 			if(this._currentID===4294967296)this._currentID=1;
