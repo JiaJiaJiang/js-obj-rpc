@@ -5,7 +5,7 @@ rpc demo (for node)
 //both
 const RPC=require('../index.js');
 
-//clent
+//client
 const clientRpc=new RPC();
 clientRpc.on('data',function(data){
 	//send to server RPC
