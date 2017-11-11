@@ -105,9 +105,8 @@ class Packer{		//data packer
 				if(toBuf){//todo
 					b2t4||(b2t4=1);
 					if(NODEMODE===true){
-						let d=Buffer.from(data,'utf8');
-						pack=Buffer.allocUnsafe(idByte+1+d.byteLength);
-						pack.fill(d,idByte+1);
+						pack=Buffer.allocUnsafe(idByte+1+Buffer.byteLength(data));//d.byteLength
+						pack.fill(data,idByte+1);
 					}else{
 						pack=utf8Util.utf8ToBytes(data,idByte+1);
 					}

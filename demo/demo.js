@@ -35,9 +35,6 @@ serverRpc.on('data',function(data){
 
 
 
-
-
-
 //send request
 function send(){
 	console.log('client:send req');
