@@ -4,13 +4,13 @@ RPC on js (better with)websocket.
 
 ## Get it
 ```
-npm i js-rpc
+npm i js-obj-rpc
 ```
 
 ## In Node.js
 Directly require the pack.
 ```javascript
-var rpc=require('js-rpc');
+var rpc=require('js-obj-rpc');
 ```
 
 ## In browser
@@ -26,3 +26,98 @@ then use the script in the dist directory
 var rpc=new RPC();
 </script>
 ```
+
+## Usage
+
+see `demo/`
+
+## Classes
+
+------
+
+# Class : RPC
+
+## events
+* 'request' : emits when receive a request,the first argument is the `Request` instance
+* 'error' : emits when error occurs
+
+## methods
+
+### handle(data)
+
+handle binary data made by `Pakcer sent by remote
+
+* data : buffer or arraybuffer
+
+### request(data,callback,opt)
+
+send a request
+
+* data : one of the following data.
+    * true
+    * false
+    * undefined
+    * null
+    * ArrayBuffer
+    * any view of ArrayBuffer
+    * anything that can be serialized to json
+* callback : the function for receiving result returned from remote,args
+        *note:all binary data sent to remote will be received as an `Uint8Array`*
+* opt : an object contains following value
+    * requireResponse : boolean. set if the request require a response from server.defaults to true
+    * timeout : set the timeout for the request,defaults to 30000 ms
+
+returns `Response` instance
+
+------
+
+# Class : Request
+
+## methods
+
+### delete()
+
+if the request haven't been responsed,this method can cancel the operation.
+it will be automaticly invoked when the response arrives
+
+### setTimeout(ms)
+
+set the timeout of the request,will be automaticly invoked when sending a request
+
+------
+
+# Class : Response
+
+## events
+* 'abort' : emits when method `abort` being invoked
+
+## methods
+### abort()
+
+emit an 'abort' event on this object,whether it causes any operation or not depends on you.
+
+### send(data)
+* data : same as `RPC:request`'s data
+
+send the response
+
+## properties
+* rpc : the RPC `instance`
+* pack : the `Pack` instance
+
+------
+
+# Class : Pack
+
+## methods
+
+### getData()
+
+gte data from the pack
+
+## properties
+
+* buffer : original buffer
+* head : pack head data
+* dataType : see index.js
+* data : a getter invokes `getData()`

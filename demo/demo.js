@@ -19,7 +19,7 @@ const serverRpc=new RPC();
 
 serverRpc.on('request',function(res){
 	console.log('receive a request',res.pack);
-
+	console.log('data:',res.pack.getData());
 	//randomly return an error or 'poi'
 	if(Math.random()>0.5)
 		res.send('poi');

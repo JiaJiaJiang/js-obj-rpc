@@ -137,7 +137,7 @@ class Pack{		//data pack
 			throw(new TypeError('buffer is not an instance of ArrayBuffer or TypedArray.'))
 		if(!(buffer instanceof Uint8Array))buffer=new Uint8Array(buffer);
 
-		this.buffer=buffer;
+		this.buffer=new Uint8Array(buffer);
 		this.head=buffer.subarray(0,1)[0];
 		this.dataType=(this.head>>3&0b111);
 		this.isRequest=((this.head&0b10000000)===0);
