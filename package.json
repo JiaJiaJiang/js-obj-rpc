@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@git.coding.net:luojia/js-obj-rpc.git"
+    "url": "git@github.com:JiaJiaJiang/js-obj-rpc.git"
   },
   "keywords": [
     "rpc"
