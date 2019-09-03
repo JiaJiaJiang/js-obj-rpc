@@ -1,6 +1,6 @@
-#js-rpc
+# js-rpc
 
-RPC on js (better with)websocket.
+RPC for javascript (better with) websocket.
 
 ## Get it
 ```
@@ -16,7 +16,7 @@ var rpc=require('js-obj-rpc');
 ## In browser
 ```
 npm i --dev
-gulp build
+npm run build
 ```
 then use the script in the dist directory
 ```html
@@ -45,9 +45,9 @@ see `demo/`
 
 ### handle(data)
 
-handle binary data made by `Pakcer sent by remote
+handle binary data made by `Pakcer` sent by remote
 
-* data : buffer or arraybuffer
+* data : Buffer or Arraybuffer
 
 ### request(data,callback,opt)
 
@@ -61,10 +61,10 @@ send a request
     * ArrayBuffer
     * any view of ArrayBuffer
     * anything that can be serialized to json
-* callback : the function for receiving result returned from remote,args
-        *note:all binary data sent to remote will be received as an `Uint8Array`*
+* callback : the function for receiving result returned from remote 
+        *Note: All binary data sent to remote will be received as an `Uint8Array`*
 * opt : an object contains following value
-    * requireResponse : boolean. set if the request require a response from server.defaults to true
+    * requireResponse : boolean. Set if the request require a response from server. Defaults to true.
     * timeout : set the timeout for the request,defaults to 30000 ms
 
 returns `Response` instance
@@ -77,12 +77,12 @@ returns `Response` instance
 
 ### delete()
 
-if the request haven't been responsed,this method can cancel the operation.
-it will be automaticly invoked when the response arrives
+If the request haven't been responded,this method can cancel the operation.
+It will automatically be invoked when the response arrives
 
 ### setTimeout(ms)
 
-set the timeout of the request,will be automaticly invoked when sending a request
+set the timeout of the request,will be automatically invoked when sending a request
 
 ------
 
@@ -113,7 +113,7 @@ send the response
 
 ### getData()
 
-gte data from the pack
+Get data from the pack.
 
 ## properties
 

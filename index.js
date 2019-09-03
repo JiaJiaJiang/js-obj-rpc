@@ -22,7 +22,6 @@ if the first 2 bits are 11(error response),and the 3rd part(data type) is not 1(
 
 */
 
-(function(global){
 'use strict';
 let NODEMODE=global.process&&global.process.release&&global.process.release.name=='node';
 if(!NODEMODE){
@@ -355,8 +354,3 @@ class RPC extends events{		//RPC handle
 }
 
 module.exports = RPC;
-
-
-})((0,eval)('this'));
-
-

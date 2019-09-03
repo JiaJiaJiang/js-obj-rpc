@@ -1,14 +1,55 @@
 var gulp = require('gulp');
 
+var dist='./dist';
+
+//js
+function transjs(name,cover=90){
+	var browserify = require('browserify'),
+		buffer = require('vinyl-buffer'),
+		source = require('vinyl-source-stream'),
+		sourcemaps = require('gulp-sourcemaps'),
+		rename = require('gulp-rename');
+
+	console.log(`compiling ${name} covers ${cover}% browsers`);
+
+	return browserify({
+			entries: name,
+			basedir:'./',
+			debug: true,
+			// sourceType: 'module'
+		})
+		.transform(
+			"babelify",{
+				presets: [
+					[
+						"@babel/preset-env",{
+							"targets":{ 
+								"browsers":`cover ${cover}%`
+							},
+							"debug": true,
+							"corejs":3,
+							"useBuiltIns": 'usage'
+						}
+					],
+				],
+			}
+		)
+		.bundle()
+		.pipe(source(`./${name}`))
+		.pipe(buffer())
+		.pipe(sourcemaps.init({ loadMaps: true }))
+		.pipe(sourcemaps.write('./'))
+		.pipe(gulp.dest(dist));
+}
+
 gulp.task('build',function(){
-	let buffer = require('vinyl-buffer'),
+	return transjs('rpc.js');
+	/* let buffer = require('vinyl-buffer'),
 		source = require('vinyl-source-stream'),
 		babelify = require('babelify'),
 		browserify = require('browserify'),
-		rename = require('gulp-rename'),
 		composer = require('gulp-uglify/composer'),
 		uglifyes = require('uglify-es'),
-		uglify = composer(uglifyes, console),
 		options = {
 			mangle: true,
 			compress: {
@@ -39,7 +80,7 @@ gulp.task('build',function(){
 			console.error(e);
 		})
 		//.pipe(rename('rpc.js'))
-		.pipe(gulp.dest('./dist'));
+		.pipe(gulp.dest('./dist')); */
 });
 
-gulp.task('default',['build']);
+gulp.task('default',gulp.series('build'));
