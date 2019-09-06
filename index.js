@@ -3,32 +3,38 @@ Copyright luojia@luojia.me
 MIT LICENSE
 */
 
-
-/*
-data pack head structure
-	0		pack type(0:request,1:response)
-	1		if(bit0==0)response requirement(0:require response,1:or not);
-			if(bit0==1)is this pack an error response(0:no,1:yes)
-	2-4		data type(0:raw,1:string,2:true,3:false,4:undefined,5:null,6:serialized,7:signed int32 number)
-	5-7		id byte length,max is 4
-	8-..	id bytes
-	...-...	data
-
-if the pack is a request without response requirement,there is no id in the pack head
-
-if the first 2 bits are 11(error response),and the 3rd part(data type) is not 1(data of the error response must be a string which is the message of the Error),
-	the 3rd part becomes a control code
-	2:cancel the remote callback of the id for which was requested (if possible)
-
+/* 
+message structure
+Byte 0
+	[0] 		0:request
+				1:response
+	[1] request:	0: no id
+					1:has id
+		response:	0:normal response
+					1:error message
+	[2] if the message has finished
+		0: 		not finished
+		1: 		finished
+	[3-7] message type
+		0-7: 	see: ControlMsg
+		8:		data true
+		9:		data false
+		10:		data binary
+		11:		data string
+		12:		data json string
+		13:		data int32
+		14:		data float32
+		15-63:	reserved
+[
+	Byte 1-4
+	message id (if has id or is a response)
+]
+Byte -
+	data
 */
 
 'use strict';
-let NODEMODE=global.process&&global.process.release&&global.process.release.name=='node';
-if(!NODEMODE){
-	var utf8Util=require('utf8util');
-}else{
-	var Buffer=global.Buffer;
-}
+var Buffer=require('Buffer');
 var events=require('events');
 
 //Polyfill
@@ -45,157 +51,163 @@ if(SUPPORT_ARRAYBUFFER && !ArrayBuffer.isView){//ArrayBuffer.isView
 	ArrayBuffer.isView=a=>!!((TypedArray&&(a instanceof TypedArray))||(global.DataView&&(a instanceof DataView)));
 }
 
-const defaultRequestOpt={
-	requireResponse:true,
-};
 
-//the object for packing and unpacking data
-class Packer{		//data packer
-	static pack(packType,id,data,dataType){
-		let idByte=0,
-			isError=false,pack;
-		if(data instanceof Error){
-			isError=true;
-			data=data.message;
+//Message object
+class Message{
+	responded=false;
+	id;
+	head;
+	type;
+	_data;
+	hasID;
+	payload;
+	finished;
+	isRequest;
+	constructor(data){//data:Buffer
+		if(Buffer.isBuffer(data)){
+			throw(new TypeError('Wrong data'));
 		}
-
-		//idByte
-		if(id>=65536){
-			if(id>=16777216)idByte=4;
-			else{idByte=3;}
-		}else{
-			if(id>=256){idByte=2;}
-			else if(id>0){idByte=1;}
+		if(data.byteLength===0){
+			throw(new Error('Bad message'));
 		}
-		//bits
-		const 	b0=(packType===0)?0:1,//b0(pack type)
-				b1=(b0===0 && id===0) || ((b0===1 && isError)?1:0);//b1
-		let 	b2t4=0,b5t7;
-
-		//b2t4(data type)
-		if(dataType!==undefined){
-			b2t4=dataType;
-		}else switch(data){
-			case true:b2t4=2;break;
-			case false:b2t4=3;break;
-			case undefined:b2t4=4;break;
-			case null:b2t4=5;break;
-			default:{//data that has data body
-				let toBuf=false;
-				if(data instanceof ArrayBuffer || ArrayBuffer.isView(data)){//buffer
-					b2t4=0;
-					if(!(data instanceof Uint8Array))
-						data=new Uint8Array(data);
-					pack=new Uint8Array(idByte+1+data.byteLength);
-					pack.set(data,idByte+1);
-				}else if(Number.isSafeInteger(data)){//int32
-					b2t4=7;
-					pack=new Uint8Array(idByte+5);//write to buffer directly
-					let dv=new DataView(pack.buffer,idByte+1,4);
-					dv.setInt32(data);
-				}else if(typeof data === 'string'){
-					toBuf=true;
-				}else{//serialized
-					b2t4=6;
-					data=JSON.stringify(data);
-					toBuf=true;
-				}
-				//convert string to buffer
-				if(toBuf){//todo
-					b2t4||(b2t4=1);
-					if(NODEMODE===true){
-						pack=Buffer.allocUnsafe(idByte+1+Buffer.byteLength(data));//d.byteLength
-						pack.fill(data,idByte+1);
-					}else{
-						pack=utf8Util.utf8ToBytes(data,idByte+1);
-					}
-				}
+		this.head=data[0];
+		this.isRequest=(head&0b10000000)===0;
+		this.hasID=this.isRequest?(head&0b01000000)===0b01000000:true;
+		this.finished=(head&0b00100000)===0b00100000;//finished flag
+		if(this.hasID){//calc id
+			if(data.byteLength<5){
+				throw(new Error('Bad message'));
 			}
+			this.id=data.readInt32BE(1);
 		}
-		if(b2t4>7 || b2t4<0)throw(new Error('Wrong data type'));
-		//write head
-		if(!pack)pack=(NODEMODE===true)?Buffer.alloc(1+idByte):new Uint8Array(1+idByte);
-		if(idByte>0){//write id
-			for(let byte=idByte;byte;byte--){
-				pack[byte]=(id>>((idByte-byte)*8))&0xFF;
-			}
-		}
-		pack[0]=((b0<<7) | (b1<<6) | (b2t4<<3) | idByte);
-
-		return pack;
+		this.type=head&0x1f;//0b00011111
+		this.payload=data.slice(this.hasID?5:1);
+		this._data;//data cache
 	}
-	static unpack(buffer){
-		return new Pack(buffer);
+	get isCtrl(){
+		return this.type<8;
+	}
+	get isError(){
+		if(!this.isRequest && (this.head&0x80)===0x80){
+			return true;
+		}
+		return false;
+	}
+	data(){
+		if(this._data!==undefined)return this._data;
+		let payload=this.payload;
+		this._data=(()=>{
+			switch(this.type){
+				case 8:return true;
+				case 9:return false;
+				case 10:return payload;//binary
+				case 11:return payload.toString('utf8');//string
+				case 12:return JSON.parse(payload);//json
+				case 13://int32
+					if(payload.byteLength!==4)
+						throw('Wrong data length for int32');
+					return payload.readInt32BE(0);
+				case 14://float32
+					if(payload.byteLength!==4)
+						throw('Wrong data length for float32');
+					return payload.readFloatBE(0);
+				default:
+					throw('Unknown data type');
+			}
+		})();
+		return this._data;
+	}
+	static toFrameData(data){//return [code,buffer]
+		if(data===true){
+			return [8];
+		}
+		if(data===false){
+			return [9];
+		}
+		if(data instanceof ArrayBuffer||ArrayBuffer.isView(data)){
+			return [10,data];
+		}
+		if(typeof data==='string'){
+			return [11,Buffer.from(data)];
+		}
+		if(typeof data==='object'&&data!==null){
+			return [12,Buffer.from(JSON.stringify(data))];
+		}
+		if(typeof data==='number'){
+			let buf=Buffer.alloc(4);
+			if(Number.isInteger(data)){
+				buf.writeInt32BE(data,0);
+				return [13,buf];
+			}
+			if(Number.isFinite(data)){
+				buf.writeFloatBE(data,0);
+				return [14,buf];
+			}
+		}
+		if(data instanceof MessageErr)
+			return [12,Buffer.from(JSON.stringify({code:data.code||4100,msg:data.msg}))];
+		if(data instanceof ControlMsg){
+			return [data.code];
+		}
+		console.error(data);//debug
+		throw(new TypeError('Unsupported data type'));
+	}
+	static Error(code,msg){
+		return new MessageErr(code,msg||Message.msgErrorCodes[code]||'Unexpected error');
+	}
+	/*
+		finished:为false时对方接收到响应不会立刻删除相关回调函数，而是持续响应
+	*/
+	static packer(req,id,data,finished=true){//data:buffer, sig:sign the data, finished:if the response has finished
+		let [type,msg]=Message.toFrameData(data);//get data type and meg buffer
+		let hasID=Number.isNumber(id);
+		let head=Buffer.alloc(hasID?5:1);//alloc the head buffer
+		if(req===true){//request
+			if(hasID)head[0]|=0b01000000;//0b01000000
+		}else{//response
+			head[0]=0x80;//0b10000000
+			if(data instanceof MessageErr)head[0]|=0b01000000;//0b01000000
+		}
+		if(finished)//mark the msg as finished
+			head[0]|=0b00100000;//0b00100000
+		head[0]|=type;
+		let arr=[head];
+		if(hasID){
+			head.writeUInt32BE(id,1);
+		}
+		if(msg&&msg.byteLength)arr.push(msg);
+		return Buffer.concat(arr);
+	}
+	static  msgErrorCodes={
+		4100:'',//free message
+		4101:'Forbidden',
+		4102:'Cannot parse the data',
+		4103:'Not supported operation',
+		4104:'Duplicate id',
 	}
 }
 
-
-class Pack{		//data pack
-	constructor(buffer){
-		if(!(buffer instanceof ArrayBuffer || ArrayBuffer.isView(buffer)))
-			throw(new TypeError('buffer is not an instance of ArrayBuffer or TypedArray.'))
-		if(!(buffer instanceof Uint8Array))buffer=new Uint8Array(buffer);
-
-		this.buffer=new Uint8Array(buffer);
-		this.head=buffer.subarray(0,1)[0];
-		this.dataType=(this.head>>3&0b111);
-		this.isRequest=((this.head&0b10000000)===0);
-		if(this.isRequest===true){
-			this.requireResponse=((this.head&0b01000000)===0);
+//error message
+class MessageErr{
+	constructor(code,msg=''){
+		this.code=code;
+		if(typeof msg==='string'){
+			this.msg=msg;
+		}else if(msg instanceof Error){
+			this.msg=msg.message;
 		}else{
-			this.isError=((this.head&0b01000000)!==0);
-			if(this.isError===true && this.dataType!==1){
-				this.isError=false;
-				this.isCtrl=true;
-			}
-		}
-		this.idByte=this.head&0b111;//idBytes
-		if(this.idByte!==0){
-			this.id=0;
-			for(let i=this.idByte,bytes=this.idByte;i--;bytes--){//get id
-				this.id|=(this.buffer[bytes]<<((bytes-1)*8));
-			}
-		}
-	}
-	getData(){
-		switch(this.dataType){
-			case 0:return this._dataBuffer();
-			case 1:return this._readString();
-			case 2:return true;
-			case 3:return false;
-			case 4:return undefined;
-			case 5:return null;
-			case 6:{
-				if(NODEMODE===true)return JSON.parse(this._dataBuffer());
-				else return JSON.parse(this._readString());
-			}
-			case 7:{
-				let b=this._dataBuffer(),n=((b[0]&127)<<24)|(b[1]<<16)|(b[2]<<8)|b[3];
-				if((b[0]>>7)===1)n=-n;
-				return n;
-			}
-		}
-	}
-	get data(){
-		return this.getData();
-	}
-	_dataBuffer(){
-		return this.buffer.subarray(this.idByte+1);
-	}
-	_readString(){
-		if(NODEMODE===true)return Buffer.from(this._dataBuffer()).toString('utf8');//use buffer for node
-		else{
-			return utf8Util.bytesToUTF8(this._dataBuffer());
+			throw(new Error('Not supported message type'));
 		}
 	}
 }
 
+//request from remote
 class Request{
+	_stat=0;//0:inited 1:requested 2:responded 3:deleted
+	timeout;
 	constructor(rpc,id,callback){
-		this._stat=0;//0:inited 1:requested 2:responsed 3:deleted
 		this.id=id;
 		this.rpc=rpc;
-		this.timeout;
 		this.cb=callback;
 	}
 	callback(...args){
@@ -207,23 +219,23 @@ class Request{
 		this._stat=2;
 		if(this.timeout){
 			clearTimeout(this.timeout);
-			this.timeout=null;
+			this.timeout=0;
 		}
 	}
 	delete(){
 		if(this._stat===3)return false;
-		if(this.rpc.sendedList.get(this.id) === this)
-			this.rpc.sendedList.delete(this.id);
+		if(this.rpc.sentList.get(this.id) === this)
+			this.rpc.sentList.delete(this.id);
 		this._finish();
 		this.cb=null;
 		this.rpc=null;
 		this._stat=3;
 		return true;
 	}
-	_timeout(){
+	_timeout(){//when timeout reaches
 		if(!this.cb)return;
-		this.cb(Error('Time out'));
-		this.rpc.control(2,this.id);
+		this.cb(new Error('Time out'));
+		this.rpc.control("abort",this.id);
 	}
 	setTimeout(time=this.rpc.timeout){
 		this.timeout=setTimeout(()=>{
@@ -233,11 +245,12 @@ class Request{
 	}
 }
 
+//response to remote
 class Response extends events{
-	constructor(rpc,pack){
+	constructor(rpc,Message_msg){
 		super();
 		this.rpc=rpc;
-		this.pack=pack;
+		this.msg=Message_msg;
 	}
 	send(data){
 		this.rpc._response(this,data);
@@ -247,109 +260,130 @@ class Response extends events{
 	}
 }
 
+class ControlMsg{
+	static cache={};
+	static codes={
+		ping:0,//ping message
+		abort:1,//abort an operation
+	}
+	code;
+	constructor(name){
+		if(name in ControlMsg.codes === false){
+			throw(new Error('Unknown operation name'));
+		}
+		this.code=ControlMsg.codes[name];
+	}
+}
 
-class RPC extends events{		//RPC handle
+function controlMsg(name){
+	if(name in ControlMsg.cache)
+		return ControlMsg.cache[name];
+	return ControlMsg.cache[name]=new ControlMsg(name);
+}
+
+const defaultRequestOpt={
+	requireResponse:true,
+};
+
+//RPC handle
+class RPC extends events{
+	_currentID=1;
+	timeout=30000;
+	sentList=new Map();//id => Request
+	receivedList=new Map();//id => Response
 	constructor(){
 		super();
-		this.sendedList=new Map();
-		this.receivedList=new Map();
-		this._currentID=1;
-		this.timeout=30000;
 	}
-	get Packer(){return Packer;}
-	_getId(){
-		if(this.sendedList.size===4294967296)return false;
-		while(this.sendedList.has(this._currentID)){
+	// get Packer(){return Packer;}
+	generateId(){//generate id (exclude 0)
+		if(this.sentList.size===4294967295)return false;//no id can be used
+		while(this.sentList.has(this._currentID)){//find available id
 			this._currentID++;
-			if(this._currentID===4294967296)this._currentID=1;
+			if(this._currentID===4294967295)this._currentID=1;
 		}
 		return this._currentID;
 	}
 	handle(data){//handle received data
-		let pack=Packer.unpack(data);
-		if(pack.isCtrl===true){//it's a control pack
-			this._controlHandle(pack.dataType,pack.id);
-		}else if(pack.isRequest===true){//it's a request
-			this._requestHandle(pack);
+		let Message_msg=new Message(data);
+		if(Message_msg.isCtrl===true){//it's a control pack
+			this._controlHandle(Message_msg.type,Message_msg.id);
+		}else if(Message_msg.isRequest===true){//it's a request
+			this._requestHandle(Message_msg);
 		}else{//it's a response
-			this._responseHandle(pack);
+			this._responseHandle(Message_msg);
 		}
 	}
-	request(data,callback,opt){	//if callback not set,it will be a request without response requirement.
+	request(data,callback,opt){	
 		if(typeof opt!== 'object')opt={};
 		opt.__proto__=defaultRequestOpt;
-		if(typeof callback !== 'function')opt.requireResponse=false;
-		let id;
-		if(opt.requireResponse===true){
-			if((id=this._getId())===false)throw(new Error('No free id.'));
-		}else{
-			id=0;
+		let id=0;
+		if(typeof callback === 'function'){
+			if((id=this.generateId())===false)throw(new Error('No free id.'));
 		}
-		
-		let pack=Packer.pack(0,id,data),request;
+		let buffer=Message.pack(true,id,data);
 		if(id!==0){
-			request=new Request(this,id,callback);
-			this.sendedList.set(id,request);
+			let request=new Request(this,id,callback);
+			this.sentList.set(id,request);
 			request.setTimeout(opt.timeout||this.timeout);
+			return request;
 		}
-		this.emit('data',pack);
-		return request;
+		this.emit('data',buffer);
 	}
-	control(code,id){
-		let pack=Packer.pack(0,id,null,code);
-		this.emit('data',pack);
+	control(name,id){
+		let buffer=Message.pack(true,id,controlMsg(name));
+		this.emit('data',buffer);
 	}
-	_response(res,data){
-		let pack=res.pack;
-		if(pack.requireResponse===false)
+	_response(Response_res,data){
+		let msg=Response_res.msg;
+		if(!msg.hasID)
 			throw(new Error('The request dosen\'t need a response'));
-		if(this.receivedList.get(pack.id) !== res){
+		if(this.receivedList.get(msg.id) !== Response_res){
 			console.debug('Missing pack');
-			//throw(new Error('No id:'+pack.id));	//ignore ids that not exist
+			//throw(new Error('No id:'+msg.id));	//ignore ids that not exist
 			return;
 		}
-		let rePack=Packer.pack(1,pack.id,data);
-		this.receivedList.delete(pack.id);
+		let rePack=Message.pack(false,msg.id,data);
+		this.receivedList.delete(msg.id);
 		this.emit('data',rePack);
 	}
 	_controlHandle(code,id){//received control pack
 		switch(code){
-			case 2:{//cancel an operation
+			case ControlMsg.codes.abort:{//cancel an operation
 				let res=this.receivedList.has(pack.id);
 				if(!res)
-					throw(new Error('No id:'+pack.id));
+					return;//ignore
+					//throw(new Error('No id:'+pack.id));
 				res.abort();
 				this.receivedList.delete(id);
 				break;
 			}
 			default:{
-				this.emit('error',new Error('Unkonown control code:'+code));
+				this.emit('error',new Error('Unknown control code:'+code));
 			}
 		}
 	}
-	_requestHandle(pack){
-		if(this.receivedList.has(pack.id)){
-			this.response(pack,Error('Duplicate id'));
+	_requestHandle(Message_msg){
+		if(this.receivedList.has(Message_msg.id)){
+			this.response(Message_msg,new Error('Duplicate id'));
 			return;
 		}
-		let res=new Response(this,pack);
-		this.receivedList.set(pack.id,res);
+		let res=new Response(this,Message_msg);
+		this.receivedList.set(Message_msg.id,res);
 		this.emit('request',res);
 	}
-	_responseHandle(pack){//handle received response
-		let req=this.sendedList.get(pack.id);
-		if(!req){
-			console.debug('no id:'+pack.id);
+	_responseHandle(Message_msg){//handle received response
+		let Request_req=this.sentList.get(Message_msg.id);
+		if(!Request_req){
+			console.debug('no id:'+Message_msg.id);
 			return;
 		}
-		//console.log('handle pack',pack)
-		if(pack.isError){
-			req.callback(pack.data);
+		if(Message_msg.isError){
+			Request_req.callback(Message_msg.data());
 		}else{
-			req.callback(null,pack.data);
+			Request_req.callback(null,Message_msg.data());
 		}
-		if(pack.id<this._currentID)this._currentID=pack.id;
-		req.delete();
+		if(Message_msg.finished)
+			Request_req.delete();
 	}
 }
 
