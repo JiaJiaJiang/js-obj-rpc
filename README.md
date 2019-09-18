@@ -1,6 +1,6 @@
-# js-rpc
+# js-obj-rpc
 
-RPC for javascript (better with) websocket.
+RPC for javascript .
 
 ## Get it
 ```
@@ -8,9 +8,9 @@ npm i js-obj-rpc
 ```
 
 ## In Node.js
-Directly require the pack.
+Directly require the pack. 
 ```javascript
-var rpc=require('js-obj-rpc');
+var RPC=require('js-obj-rpc');
 ```
 
 ## In browser
@@ -18,7 +18,7 @@ var rpc=require('js-obj-rpc');
 npm i --dev
 npm run build
 ```
-then use the script in the dist directory
+then use the script in the `dist` directory
 ```html
 <script src="***/dist/rpc.js"></script>
 
@@ -29,7 +29,7 @@ var rpc=new RPC();
 
 ## Usage
 
-see `demo/`
+see `test/`
 
 ## Classes
 
@@ -38,36 +38,42 @@ see `demo/`
 # Class : RPC
 
 ## events
-* 'request' : emits when receive a request,the first argument is the `Request` instance
-* 'error' : emits when error occurs
+* 'request'  (message,callback): emits when receive a request,the first argument is the `Request` instance.
+* 'dataToSend' (buffer): emits buffer data for sending to the other rpc side.
 
 ## methods
 
 ### handle(data)
 
-handle binary data made by `Pakcer` sent by remote
+handle binary data sent by remote
 
-* data : Buffer or Arraybuffer
+* data : Buffer
 
 ### request(data,callback,opt)
 
 send a request
 
 * data : one of the following data.
-    * true
-    * false
-    * undefined
-    * null
-    * ArrayBuffer
-    * any view of ArrayBuffer
-    * anything that can be serialized to json
-* callback : the function for receiving result returned from remote 
-        *Note: All binary data sent to remote will be received as an `Uint8Array`*
+    * ArrayBuffer or any view of ArrayBuffer
+    * anything that can be serialized to JSON
+* callback(err,data) : the function for receiving result returned from remote 
+        *Note: All binary data sent to remote will be received as an `Buffer`*
 * opt : an object contains following value
-    * requireResponse : boolean. Set if the request require a response from server. Defaults to true.
-    * timeout : set the timeout for the request,defaults to 30000 ms
+    * timeout : set the timeout for the request,defaults to 15000ms.
 
 returns `Response` instance
+
+### control(name,data)
+
+send a control message
+
+* name : see `ControlMsg.codes`
+
+### delete(req)
+
+delete a `Request` or an `inRequest` in the RPC's map
+
+* req : `Request` or `inRequest` instance.
 
 ------
 
@@ -75,49 +81,49 @@ returns `Response` instance
 
 ## methods
 
-### delete()
+### abort()
 
 If the request haven't been responded,this method can cancel the operation.
-It will automatically be invoked when the response arrives
+An control message will be sent to remote and the `inRequest` instance will emit an `abort` event.
 
 ### setTimeout(ms)
 
-set the timeout of the request,will be automatically invoked when sending a request
+Set the timeout of the request, will be automatically invoked when sending a request.
+
+When timeout reaches, the request will be aborted.
 
 ------
 
-# Class : Response
+# Class : InRequest extends events
 
 ## events
 * 'abort' : emits when method `abort` being invoked
 
 ## methods
-### abort()
+### data()
 
-emit an 'abort' event on this object,whether it causes any operation or not depends on you.
+Get data sent by remote.
 
-### send(data)
-* data : same as `RPC:request`'s data
+### setTimeout(ms)
+* ms : time. Defaults to `15000`.
 
-send the response
+Set timeout for the inRequest. When timeout reaches, an Error message will text `time out`.
 
 ## properties
-* rpc : the RPC `instance`
-* pack : the `Pack` instance
+* msg : a instance of `Message`
+* `getter` id : id of the message
 
 ------
 
-# Class : Pack
+# Class : Message
 
 ## methods
 
-### getData()
+### data()
 
-Get data from the pack.
+Get data from the message.
 
 ## properties
 
-* buffer : original buffer
-* head : pack head data
-* dataType : see index.js
-* data : a getter invokes `getData()`
+* id : id of the message
+* payload : raw buffer of data
