@@ -52,7 +52,10 @@ if(SUPPORT_ARRAYBUFFER && !ArrayBuffer.isView){//ArrayBuffer.isView
 }
 
 
-//Message object
+/**
+ * @description	Message object
+ * @class Message
+ */
 class Message{
 	responded=false;
 	id;
@@ -63,7 +66,11 @@ class Message{
 	hasID;
 	payload;
 	isRequest;
-	constructor(data){//data:Buffer
+	/**
+	 * Creates an instance of Message.
+	 * @param {Buffer} data
+	 */
+	constructor(data){
 		if(!Buffer.isBuffer(data)){
 			throw(new TypeError('Wrong data'));
 		}
@@ -85,16 +92,28 @@ class Message{
 		this.payload=data.slice(this.hasID?9:1);
 		this._data;//data cache
 	}
+	/**
+	 * @description	is control message
+	 * @readonly
+	 */
 	get isCtrl(){
 		return this.type<8;
 	}
+	/**
+	 * @description	is error message
+	 * @readonly
+	 */
 	get isError(){
 		if((this.head&0x40)===0x40){
 			return true;
 		}
 		return false;
 	}
-	data(){//parse data
+	/**
+	 * @description parse data
+	 * @returns {any}	carried data
+	 */
+	data(){
 		if(this._data!==undefined)return this._data;
 		this._data=(()=>{
 			if(this.type<8)return ControlMsg.parseData(this.type,this.payload);
@@ -115,7 +134,13 @@ class Message{
 		})();
 		return this._data;
 	}
-	static toFrameData(data){//return [code,buffer]
+	/**
+	 * @description	convert different data to message format buffer
+	 * @static
+	 * @param {any} data	data that defined at top of this file
+	 * @returns {[number,Buffer]}	[type code, data buffer]
+	 */
+	static toFrameData(data){
 		if(data instanceof ErrorMsg)
 			return [12,Buffer.from(JSON.stringify({code:data.code||4100,msg:data.msg}))];
 		if(data instanceof ControlMsg){
@@ -151,6 +176,17 @@ class Message{
 		console.error('data: ',data);//debug
 		throw(new TypeError('Unsupported data type: '+typeof data));
 	}
+	/**
+	 * @description	pack data into message buffer
+	 * @static
+	 * @param {boolean} req	is request
+	 * @param {boolean} err	is error
+	 * @param {number} type	type code
+	 * @param {Buffer} buf	data buffer
+	 * @param {number} id	message id
+	 * @param {number} randomNum	a random number for preventing id confict
+	 * @returns {Buffer}  
+	 */
 	static _pack(req,err,type,buf,id,randomNum){
 		let hasID=typeof id==='number' && id>0;
 		let head=Buffer.alloc(hasID?9:1);//alloc the head buffer
@@ -171,6 +207,15 @@ class Message{
 		if(buf&&buf.byteLength)arr.push(buf);
 		return Buffer.concat(arr);
 	}
+	/**
+	 * @description	pack data into message buffer
+	 * @static
+	 * @param {boolean} req	is request
+	 * @param {any} data	data to send
+	 * @param {number} id	message id
+	 * @param {number} randomNum	a random number for preventing id confict
+	 * @returns {Buffer}	packed message
+	 */
 	static pack(req,data,id,randomNum){//data:buffer, sig:sign the data, finished:the response has finished
 		let [type,buf]=Message.toFrameData(data);//get data type and meg buffer
 		let err=data instanceof ErrorMsg;
@@ -184,13 +229,27 @@ class Message{
 		4104:'Duplicate id',
 		4104:'Time out',
 	}
+	/**
+	 * @description	is valid id
+	 * @static
+	 * @param {number} id
+	 * @returns {boolean}
+	 */
 	static isValidId(id){
 		return typeof id==='number'&&id>0&&id<=0xFFFFFFFF;
 	}
 }
 
-//error message
+/**
+ * @description error message
+ * @class ErrorMsg
+ */
 class ErrorMsg{
+	/**
+	 * Creates an instance of ErrorMsg.
+	 * @param {any} code	error code to return
+	 * @param {string} [msg='']	error message to return
+	 */
 	constructor(code,msg=''){
 		this.code=code;
 		if(typeof msg==='string'){
@@ -203,7 +262,10 @@ class ErrorMsg{
 	}
 }
 
-//control message
+/**
+ * @description control message
+ * @class ControlMsg
+ */
 class ControlMsg{
 	static cache={};
 	static codes={
@@ -211,6 +273,11 @@ class ControlMsg{
 	}
 	code;
 	buf;
+	/**
+	 * Creates an instance of ControlMsg.
+	 * @param {string} name name of the control operation
+	 * @param {*} data	data of the control message
+	 */
 	constructor(name,data){
 		if(name in ControlMsg.codes === false){
 			throw(new Error('Unknown operation name'));
@@ -225,6 +292,13 @@ class ControlMsg{
 				break;
 		}
 	}
+	/**
+	 * @description	convert control message payload to number
+	 * @static
+	 * @param {number} code	control code
+	 * @param {Buffer} buf	control message payload
+	 * @returns {number}  
+	 */
 	static parseData(code,buf){
 		switch(code){
 			case ControlMsg.codes.abort:
@@ -233,20 +307,37 @@ class ControlMsg{
 	}
 }
 
-//request from remote
+/**
+ * @description request from remote
+ * @class Request
+ */
 class Request{
 	responded=false;
 	timeout;
+	/**
+	 * Creates an instance of Request.
+	 * @param {RPC} rpc
+	 * @param {number} id	message id
+	 * @param {function} callback	receive response data
+	 * @param {number} random	a random number for preventing id confict
+	 */
 	constructor(rpc,id,callback,random){
 		this.id=id;
 		this.rpc=rpc;
 		this.cb=callback;
 		this.random=random;
 	}
+	/**
+	 * @description	abort the request, depends on remote data handle
+	 */
 	abort(){
 		this.rpc.control('abort',this.id);
 		this.rpc.delete(this);
 	}
+	/**
+	 * @description	fill response data when the remote rpc respond
+	 * @param {*} args
+	 */
 	callback(...args){
 		if(this.responded)
 			throw(new Error('Responded'));
@@ -254,14 +345,21 @@ class Request{
 		if(this.cb)
 			this.cb(...args);
 	}
-	setTimeout(time){
+	/**
+	 * @description set time out of the request
+	 * @param {*} time
+	 */
+	setTimeout(time){//
 		if(typeof time!=='number'||!(time>=0))
 			throw(new Error('Wrong timeout'));
 		if(this.timeout)
 			clearTimeout(this.timeout);
 		this.timeout=setTimeout(()=>this._timeout(),time);
 	}
-	_timeout(){//when timeout reaches
+	/**
+	 * @description when timeout reaches, an abort control will be sent
+	 */
+	_timeout(){
 		this.timeout=0;
 		if(this.cb){
 			this.cb(new Error('Time out'));
@@ -276,27 +374,53 @@ class Request{
 			this.timeout=0;
 		}
 	}
+	/**
+	 * @description	generate a random number
+	 * @static
+	 * @returns {number}  
+	 */
 	static generateRandom(){
 		return Math.round(4294967295*Math.random());
 	}
 }
 
-//incoming request
 /* 
 events
 	abort
 */
+/**
+ * @description incoming request
+ * @class InRequest
+ * @extends {events}
+ */
 class InRequest extends events{
 	_timeout;
+	/**
+	 * Creates an instance of InRequest.
+	 * @param {Message} Message_msg
+	 * @param {RPC} rpc
+	 */
 	constructor(Message_msg,rpc){
 		super();
 		this.rpc=rpc;
 		this.msg=Message_msg;
 	}
+	/**
+	 * @description	get message id
+	 * @readonly
+	 */
 	get id(){return this.msg.id;}
+	/**
+	 * @description	get data of the message, wil be recovered to thier origin type
+	 * @returns {any}  
+	 */
 	data(){
 		return this.msg.data();
 	}
+	/**
+	 * @description	set timeout of the incoming request
+	 * @param {*} time
+	 */
 	setTimeout(time){
 		if(typeof time!=='number'||!(time>=0))
 			throw(new Error('Wrong timeout'));
@@ -307,7 +431,10 @@ class InRequest extends events{
 	_abort(str_msg){
 		this.emit('abort',str_msg);
 	}
-	_timeout(){//when timeout reaches
+	/**
+	 * @description when timeout reaches, rpc will send an error back to remote
+	 */
+	_timeout(){
 		this._timeout=0;
 		this._abort('time out');
 		this.rpc._respond(this,RPC.Error(4104));
@@ -323,10 +450,14 @@ class InRequest extends events{
 }
 
 
-//RPC handle
 /* 
 Always call the callback of the 'request' event, otherwise the requests will reach timeout
 */
+/**
+ * @description RPC handle
+ * @class RPC
+ * @extends {events}
+ */
 class RPC extends events{
 	static Error(code,msg){
 		return new ErrorMsg(code,msg||Message.msgErrorCodes[code]||'Unexpected error');
@@ -342,7 +473,11 @@ class RPC extends events{
 		super();
 	}
 	//sender side
-	_generateId(){//generate id (exclude 0)
+	/**
+	 * @description generate id (exclude 0)
+	 * @returns {number}  
+	 */
+	_generateId(){
 		if(this.reqList.size===0xFFFFFFFF)return false;//no id can be used
 		while(this.reqList.has(this._currentID)){//find available id
 			this._currentID++;
@@ -351,7 +486,10 @@ class RPC extends events{
 		return this._currentID;
 	}
 	
-	//buffer handle
+	/**
+	 * @description buffer handle
+	 * @param {Buffer} data	data from remote rpc sender
+	 */
 	handle(data){
 		let Message_msg=new Message(data);
 		if(Message_msg.isCtrl===true){//it's a control pack
@@ -362,7 +500,13 @@ class RPC extends events{
 			this._responseHandle(Message_msg);
 		}
 	}
-	//send request
+	/**
+	 * @description send request
+	 * @param {*} data
+	 * @param {function} callback
+	 * @param {object} opt
+	 * @returns {Request}  
+	 */
 	request(data,callback,opt){	
 		if(typeof opt!== 'object')opt={};
 		let id=0,request,rand;
@@ -381,12 +525,21 @@ class RPC extends events{
 		this.emit('dataToSend',buffer);
 		return request;
 	}
+	/**
+	 * @description	send control message
+	 * @param {number} name
+	 * @param {*} data
+	 */
 	control(name,data){
 		let msg=new ControlMsg(name,data);
 		let buffer=Message._pack(true,false,msg.code,msg.buf,0);
 		this.emit('dataToSend',buffer);
 	}
-	delete(req){//delete the req instance from map
+	/**
+	 * @description delete the req instance from map
+	 * @param {Request|InRequest} req
+	 */
+	delete(req){
 		let id=req.id;
 		if(req instanceof Request){
 			if(this.reqList.get(id) === req)
@@ -405,6 +558,11 @@ class RPC extends events{
 	}
 
 	//receviver side
+	/**
+	 * @description	make a message to respond the request
+	 * @param {InRequest} InRequest_req
+	 * @param {*} data
+	 */
 	_respond(InRequest_req,data){
 		let msg=InRequest_req.msg;
 		if(!msg.hasID)
@@ -418,7 +576,12 @@ class RPC extends events{
 		this.emit('dataToSend',Buffer_buf);
 		this.delete(InRequest_req);
 	}
-	_controlHandle(code,data){//received control pack
+	/**
+	 * @description	handle control operation
+	 * @param {*} code received control code
+	 * @param {*} data received control data
+	 */
+	_controlHandle(code,data){
 		switch(code){
 			case ControlMsg.codes.abort:{//cancel an operation
 				let InRequest_req=this.inReqList.get(data);//data: id
@@ -433,7 +596,11 @@ class RPC extends events{
 			}
 		}
 	}
-	_requestHandle(Message_msg){//handle received request
+	/**
+	 * @description	handle received request
+	 * @param {Message} Message_msg
+	 */
+	_requestHandle(Message_msg){
 		if(this.inReqList.has(Message_msg.id)){
 			this._respond(Message_msg,RPC.Error(4104));//Duplicate id
 			return;
@@ -449,7 +616,11 @@ class RPC extends events{
 				this._respond(InRequest_req,r);
 		});
 	}
-	_responseHandle(Message_msg){//handle received response
+	/**
+	 * @description	handle received response
+	 * @param {Message} Message_msg
+	 */
+	_responseHandle(Message_msg){//
 		let Request_req=this.reqList.get(Message_msg.id);
 		if(!Request_req){
 			console.debug('no req for id:'+Message_msg.id);
