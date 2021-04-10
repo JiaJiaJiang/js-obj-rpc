@@ -1,6 +1,6 @@
 {
   "name": "js-obj-rpc",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "rpc for js",
   "main": " ",
   "scripts": {
@@ -31,6 +31,5 @@
     "utf8util": "^1.0.1",
     "vinyl-buffer": "^1.0.1",
     "vinyl-source-stream": "^2.0.0"
-  },
-  "dependencies": {}
+  }
 }
