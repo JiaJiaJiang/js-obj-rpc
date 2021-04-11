@@ -318,7 +318,7 @@ class Request{
 	 * Creates an instance of Request.
 	 * @param {RPC} rpc
 	 * @param {number} id	message id
-	 * @param {function} callback	receive response data
+	 * @param {function(...any)} callback	receive response data
 	 * @param {number} random	a random number for preventing id confict
 	 */
 	constructor(rpc,id,callback,random){
@@ -505,7 +505,7 @@ class RPC extends events{
 	/**
 	 * @description send request
 	 * @param {*} data
-	 * @param {function} callback
+	 * @param {function(Error,any)} callback
 	 * @param {object} opt
 	 * @returns {Request}  
 	 */
