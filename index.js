@@ -34,7 +34,7 @@ Byte -
 */
 
 'use strict';
-var Buffer=require('Buffer').Buffer;
+// if((typeof Buffer) !== 'function')var Buffer=require('Buffer').Buffer;
 var events=require('events');
 
 //Polyfill
@@ -395,6 +395,7 @@ events
  */
 class InRequest extends events{
 	_timeout;
+	aborted=false;
 	/**
 	 * Creates an instance of InRequest.
 	 * @param {Message} Message_msg
@@ -429,6 +430,7 @@ class InRequest extends events{
 		this._timeout=setTimeout(()=>this._timeout(),time);
 	}
 	_abort(str_msg){
+		this.aborted=true;
 		this.emit('abort',str_msg);
 	}
 	/**
@@ -640,5 +642,4 @@ class RPC extends events{
 module.exports = {
 	Buffer,
 	RPC,
-	Buffer,
 };
