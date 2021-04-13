@@ -5,12 +5,12 @@ const rpc1=new RPC(),
 	rpc2=new RPC();
 
 //rpc1 data to rpc2
-rpc1.on('dataToSend',buf=>{//emulate sending
+rpc1.setSender(buf=>{//emulate sending
 	setImmediate(()=>rpc2.handle(buf));
 })
 
 //rpc2 data to rpc1
-rpc2.on('dataToSend',buf=>{//emulate sending
+rpc2.setSender(buf=>{//emulate sending
 	setImmediate(()=>rpc1.handle(buf));
 })
 

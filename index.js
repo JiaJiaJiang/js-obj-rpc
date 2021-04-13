@@ -470,7 +470,7 @@ class RPC extends events{
 	reqList=new Map();//id => Request
 	inReqList=new Map();//id => InRequest
 	_checkerTimer;
-
+	_sender;
 	constructor(){
 		super();
 	}
@@ -524,18 +524,21 @@ class RPC extends events{
 			this.reqList.set(id,request);
 			request.setTimeout(opt.timeout||this.defaultRequestTimeout);
 		}
-		this.emit('dataToSend',buffer);
+		this._send(buffer).then(err=>{
+			err&&request.callback(err);
+		});
 		return request;
 	}
 	/**
 	 * @description	send control message
 	 * @param {number} name
 	 * @param {*} data
+	 * @returns {Promise<Error>}	error of send
 	 */
 	control(name,data){
 		let msg=new ControlMsg(name,data);
 		let buffer=Message._pack(true,false,msg.code,msg.buf,0);
-		this.emit('dataToSend',buffer);
+		return this._send(buffer);
 	}
 	/**
 	 * @description delete the req instance from map
@@ -558,7 +561,34 @@ class RPC extends events{
 			throw(new Error('Wrong type'));
 		}
 	}
-
+	/**
+	 * @description	set sender of data.
+	 * @description	sync sender : return send Error;
+	 * @description	async sender : resolve to send Error;
+	 * @param {function} func
+	 */
+	setSender(func){
+		if(typeof func!=='function')
+			throw(new TypeError('not a function'));
+		/* 
+			sync sender:return send Error
+			
+		*/
+		this._sender=func;
+	}
+	/**
+	 * @description	send buffer by sender function
+	 * @param {Buffer} buf
+	 * @returns {Promise<Error>}  
+	 */
+	async _send(buf){
+		if(this._sender){
+			let r;
+			if((await this._sender(buf)) instanceof Error === false)return;
+			return await this._sender(buf);//retry
+		}
+		throw(new Error('sender not defined'));
+	}
 	//receviver side
 	/**
 	 * @description	make a message to respond the request
@@ -575,7 +605,7 @@ class RPC extends events{
 			return;
 		}
 		let Buffer_buf=Message.pack(false,data,msg.id,msg.random);
-		this.emit('dataToSend',Buffer_buf);
+		this._send(Buffer_buf);
 		this.delete(InRequest_req);
 	}
 	/**
