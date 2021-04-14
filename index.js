@@ -57,7 +57,6 @@ if(SUPPORT_ARRAYBUFFER && !ArrayBuffer.isView){//ArrayBuffer.isView
  * @class Message
  */
 class Message{
-	responded=false;
 	id;
 	random;
 	head;
@@ -396,6 +395,7 @@ events
 class InRequest extends events{
 	_timeout;
 	aborted=false;
+	responded=false;
 	/**
 	 * Creates an instance of InRequest.
 	 * @param {Message} Message_msg
@@ -427,7 +427,7 @@ class InRequest extends events{
 			throw(new Error('Wrong timeout'));
 		if(this._timeout)
 			clearTimeout(this._timeout);
-		this._timeout=setTimeout(()=>this._timeout(),time);
+		this._timeout=setTimeout(()=>this._reachTimeout(),time);
 	}
 	_abort(str_msg){
 		this.aborted=true;
@@ -436,7 +436,7 @@ class InRequest extends events{
 	/**
 	 * @description when timeout reaches, rpc will send an error back to remote
 	 */
-	_timeout(){
+	_reachTimeout(){
 		this._timeout=0;
 		this._abort('time out');
 		this.rpc._respond(this,RPC.Error(4104));
@@ -652,7 +652,7 @@ class RPC extends events{
 	 * @description	handle received response
 	 * @param {Message} Message_msg
 	 */
-	_responseHandle(Message_msg){//
+	_responseHandle(Message_msg){
 		let Request_req=this.reqList.get(Message_msg.id);
 		if(!Request_req){
 			console.debug('no req for id:'+Message_msg.id);
