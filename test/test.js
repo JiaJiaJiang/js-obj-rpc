@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const {RPC}=require('../index.js');
+console.log('rpc1 sends data to rpc2 and rpc2 will log it then send back, rpc1 will log data be sent back');
 
 const rpc1=new RPC(),
 	rpc2=new RPC();
@@ -58,6 +59,7 @@ function test(data){
 	await test('poi');
 	await test(undefined);
 	await test(null);
+	await test(2n**160n);
 	try{
 		await test('give me an error');
 	}catch(e){

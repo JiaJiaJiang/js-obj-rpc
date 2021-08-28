@@ -1,6 +1,6 @@
 # js-obj-rpc
 
-RPC for javascript .
+RPC packer and parser for Javascript .
 
 ## Get it
 ```
@@ -29,13 +29,38 @@ var rpc=new RPC();
 
 ## Usage
 
-see `test/`
+see `test/test.js`
+
+This module only packs and parse data, you should set a sender and a request listener for RPC object, then call `RPC.handle` with received data.
+
+Data will be packed to a `Buffer`, so your sender should have the ability to send `Buffer`.
+
+## Supported Data Type
+
+The following types are supported directly
+
+* Boolean (`true` and `false`)
+* `Buffer` and `ArrayBuffer`
+* String
+* Javascript number
+* `undefined`
+* `null`
+* BigInt
+
+Other data such as an `Object` will be converted to `JSON` string and automatically be parsed back to an `Object` before passing to the handler, so any data which can be converted between `JSON` and Object are able to be sent.
 
 ## Classes
 
 ------
 
-# Class : RPC
+# Class : RPC(options)
+
+#### options
+
+* defaultRequestTimeout : (`Default: 15000ms`) Timeout for an out going request, if reaches timeout, the callback will get an Error shows 'timeout' and send an 'abort' control message to remote.
+* defaultResponseTimeout : (`Default: 15000ms`) Timeout for responding, if the handler not respond the request in time, an 'abort' event will be emitted and a 'time out' Error will be sent back.
+
+
 
 ## events
 * 'request'  (message,callback): emits when receive a request,the first argument is the `Request` instance.
@@ -56,7 +81,7 @@ send a request
 * data : one of the following data.
     * ArrayBuffer or any view of ArrayBuffer
     * anything that can be serialized to JSON
-* callback(err,data) : the function for receiving result returned from remote 
+* callback(err,data) : the function for receiving result returned from remote . If callback was not defined, this method will return a `Promise` for the result.
         *Note: All binary data sent to remote will be received as an `Buffer`*
 * opt : an object contains following value
     * timeout : set the timeout for the request,defaults to 15000ms.
@@ -97,7 +122,7 @@ When timeout reaches, the request will be aborted.
 # Class : InRequest extends events
 
 ## events
-* 'abort' : emits when method `abort` being invoked
+* 'abort' : emits when `Request.abort` being invoked or the response reaches timeout.
 
 ## methods
 ### data()

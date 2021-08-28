@@ -22,7 +22,9 @@ Byte 0
 		12:		data json string
 		13:		data double js number
 		14:		data undefined
-		15-31:	reserved
+		15:		data null
+		16:		data bigint
+		16-31:	reserved
 [
 	Byte 1-4
 		message id (if has id or is a response)
@@ -127,6 +129,8 @@ class Message{
 						throw('Wrong data length for number');
 					return this.payload.readDoubleBE(0);
 				case 14:return undefined;
+				case 15:return null;
+				case 16:return BigInt('0x'+this.payload.toString());
 				default:
 					throw('Unknown data type');
 			}
@@ -140,38 +144,31 @@ class Message{
 	 * @returns {[number,Buffer]}	[type code, data buffer]
 	 */
 	static toFrameData(data){
+		if(data===undefined)return [14];
+		if(data===null)return [15];
+		if(data===true)return [8];
+		if(data===false)return [9];
 		if(data instanceof ErrorMsg)
 			return [12,Buffer.from(JSON.stringify({code:data.code||4100,msg:data.msg}))];
 		if(data instanceof ControlMsg){
 			return [data.code,data.buf];
 		}
-		if(data instanceof Error){
-			throw('Dont use Error, use RPC.Error instead');
-		}
-		if(data===true){
-			return [8];
-		}
-		if(data===false){
-			return [9];
-		}
 		if(data instanceof ArrayBuffer||ArrayBuffer.isView(data)){
 			return [10,data];
 		}
-		if(typeof data==='string'){
-			return [11,Buffer.from(data)];
+		if(data instanceof Error){
+			throw('Dont use Error, use RPC.Error instead');
 		}
-		if(typeof data==='object'){
-			return [12,Buffer.from(JSON.stringify(data))];
+		switch(typeof data){
+			case 'string':return [11,Buffer.from(data)];
+			case 'object':return [12,Buffer.from(JSON.stringify(data))];
+			case 'number':
+				let buf=Buffer.alloc(8);
+				buf.writeDoubleBE(data);
+				return [13,buf];
+			case 'bigint':
+				return [15,Buffer.from(data.toString(16))];
 		}
-		if(typeof data==='number'){
-			let buf=Buffer.alloc(8);
-			buf.writeDoubleBE(data);
-			return [13,buf];
-		}
-		if(data===undefined){
-			return [14];
-		}
-		
 		console.error('data: ',data);//debug
 		throw(new TypeError('Unsupported data type: '+typeof data));
 	}
@@ -226,7 +223,7 @@ class Message{
 		4102:'Cannot parse the data',
 		4103:'Not supported operation',
 		4104:'Duplicate id',
-		4104:'Time out',
+		4105:'Time out',
 	}
 	/**
 	 * @description	is valid id
@@ -283,11 +280,11 @@ class ControlMsg{
 		}
 		this.code=ControlMsg.codes[name];
 		switch(this.code){
-			case ControlMsg.codes.abort:
+			case ControlMsg.codes.abort://abort message
 				if(!Message.isValidId(data))
 					throw('Invalid id: '+data);
 				this.buf=Buffer.allocUnsafe(4);
-				this.buf.writeUInt32BE(data);
+				this.buf.writeUInt32BE(data);//set msg id to be aborted
 				break;
 		}
 	}
@@ -439,7 +436,7 @@ class InRequest extends events{
 	_reachTimeout(){
 		this._timeout=0;
 		this._abort('time out');
-		this.rpc._respond(this,RPC.Error(4104));
+		this.rpc._respond(this,RPC.Error(4105));
 	}
 	_destructor(){
 		this.rpc=null;
@@ -450,7 +447,6 @@ class InRequest extends events{
 		}
 	}
 }
-
 
 /* 
 Always call the callback of the 'request' event, otherwise the requests will reach timeout
@@ -465,14 +461,16 @@ class RPC extends events{
 		return new ErrorMsg(code,msg||Message.msgErrorCodes[code]||'Unexpected error');
 	}
 	_currentID=1;
-	defaultRequestTimeout=15000;
-	responseTimeout=15000;
+	defaultRequestTimeout;
+	defaultResponseTimeout;
 	reqList=new Map();//id => Request
 	inReqList=new Map();//id => InRequest
 	_checkerTimer;
 	_sender;
-	constructor(){
+	constructor(opt){
 		super();
+		this.defaultRequestTimeout=opt.defaultRequestTimeout||15000;
+		this.defaultResponseTimeout=opt.defaultResponseTimeout||15000;
 	}
 	//sender side
 	/**
@@ -483,7 +481,7 @@ class RPC extends events{
 		if(this.reqList.size===0xFFFFFFFF)return false;//no id can be used
 		while(this.reqList.has(this._currentID)){//find available id
 			this._currentID++;
-			if(this._currentID===0xFFFFFFFF)this._currentID=0;
+			if(this._currentID===0xFFFFFFFF)this._currentID=1;
 		}
 		return this._currentID;
 	}
@@ -639,7 +637,7 @@ class RPC extends events{
 		}
 		let InRequest_req=new InRequest(Message_msg,this);//create a response for the request
 		if(Message_msg.id){
-			InRequest_req.setTimeout(this.responseTimeout);
+			InRequest_req.setTimeout(this.defaultResponseTimeout);
 			this.inReqList.set(Message_msg.id,InRequest_req);
 		}
 		this.emit('request',InRequest_req,(r)=>{//emit a request event for the request handle created by you
