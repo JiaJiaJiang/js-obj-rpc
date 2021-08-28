@@ -31,7 +31,7 @@ var rpc=new RPC();
 
 see `test/test.js`
 
-This module only packs and parse data, you should set a sender and a request listener for RPC object, then call `RPC.handle` with received data.
+This module only packs and parses data, you should set a sender and a request listener for RPC object, then call `RPC.handle` with received data.
 
 Data will be packed to a `Buffer`, so your sender should have the ability to send `Buffer`.
 
@@ -40,7 +40,7 @@ Data will be packed to a `Buffer`, so your sender should have the ability to sen
 The following types are supported directly
 
 * Boolean (`true` and `false`)
-* `Buffer` and `ArrayBuffer`
+* `Buffer` and `ArrayBuffer` (These two are received as a `Buffer`)
 * String
 * Javascript number
 * `undefined`
