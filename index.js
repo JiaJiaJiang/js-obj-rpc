@@ -467,7 +467,7 @@ class RPC extends events{
 	inReqList=new Map();//id => InRequest
 	_checkerTimer;
 	_sender;
-	constructor(opt){
+	constructor(opt={}){
 		super();
 		this.defaultRequestTimeout=opt.defaultRequestTimeout||15000;
 		this.defaultResponseTimeout=opt.defaultResponseTimeout||15000;
