@@ -1,6 +1,6 @@
 {
   "name": "js-obj-rpc",
-  "version": "2.1.2",
+  "version": "3.0.0",
   "description": "rpc for js",
   "main": "index.js",
   "scripts": {
