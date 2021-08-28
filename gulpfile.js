@@ -2,12 +2,12 @@ var gulp = require('gulp');
 
 var dist='./dist';
 
-function transjs(name,cover=90){
+function transjs(name,cover=80){
 	var browserify = require('browserify'),
 		buffer = require('vinyl-buffer'),
 		source = require('vinyl-source-stream'),
 		sourcemaps = require('gulp-sourcemaps'),
-		rename = require('gulp-rename');
+		babel = require('gulp-babel');
 
 	console.log(`compiling ${name} covers ${cover}% browsers`);
 
@@ -15,7 +15,6 @@ function transjs(name,cover=90){
 			entries: name,
 			basedir:'./',
 			debug: true,
-			// sourceType: 'module'
 		})
 		.transform(
 			"babelify",{
@@ -25,14 +24,14 @@ function transjs(name,cover=90){
 							"targets":{ 
 								"browsers":`cover ${cover}%`
 							},
-							"debug": true,
+							"debug": false,
 							"corejs":3,
 							"useBuiltIns": 'usage'
 						}
 					],
 				],
 				plugins: [
-					["@babel/plugin-proposal-class-properties", { "loose": true }]
+					["@babel/plugin-proposal-class-properties"]
 				]
 			}
 		)
@@ -40,6 +39,16 @@ function transjs(name,cover=90){
 		.pipe(source(`./${name}`))
 		.pipe(buffer())
 		.pipe(sourcemaps.init({ loadMaps: true }))
+		.pipe(babel({
+			presets:[
+				["minify", {
+					mangle:false,
+				}],
+			],
+			plugins:[
+				"babel-plugin-remove-comments",
+			]
+		}))
 		.pipe(sourcemaps.write('./'))
 		.pipe(gulp.dest(dist));
 }
