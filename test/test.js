@@ -60,6 +60,7 @@ function test(data){
 	await test(undefined);
 	await test(null);
 	await test(2n**160n);
+	await test(-(2n**16n));
 	try{
 		await test('give me an error');
 	}catch(e){

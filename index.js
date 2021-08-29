@@ -130,7 +130,11 @@ class Message{
 					return this.payload.readDoubleBE(0);
 				case 14:return undefined;
 				case 15:return null;
-				case 16:return BigInt('0x'+this.payload.toString());
+				case 16:{
+					let bStr=this.payload.toString();
+					if(bStr[0]==='-')return -BigInt('0x'+bStr.slice(1));
+					return BigInt('0x'+bStr);
+				}
 				default:
 					throw('Unknown data type');
 			}
@@ -167,7 +171,7 @@ class Message{
 				buf.writeDoubleBE(data);
 				return [13,buf];
 			case 'bigint':
-				return [15,Buffer.from(data.toString(16))];
+				return [16,Buffer.from(data.toString(16))];
 		}
 		console.error('data: ',data);//debug
 		throw(new TypeError('Unsupported data type: '+typeof data));
