@@ -397,15 +397,18 @@ class InRequest extends events{
 	_timeout;
 	aborted=false;
 	responded=false;
+	source;
 	/**
 	 * Creates an instance of InRequest.
 	 * @param {Message} Message_msg
 	 * @param {RPC} rpc
+	 * @param {*} source define a source, which will be attached to request object
 	 */
-	constructor(Message_msg,rpc){
+	constructor(Message_msg,rpc,source){
 		super();
 		this.rpc=rpc;
 		this.msg=Message_msg;
+		this.source=source;
 	}
 	/**
 	 * @description	get message id
@@ -493,15 +496,16 @@ class RPC extends events{
 	/**
 	 * @description buffer handle
 	 * @param {Buffer} data	data from remote rpc sender
+	 * @param {*} source define a source, which will be attached to request object
 	 */
-	handle(data){
+	handle(data,source){
 		let Message_msg=new Message(data);
 		if(Message_msg.isCtrl===true){//it's a control pack
-			this._controlHandle(Message_msg.type,Message_msg.data());
+			this._controlHandle(Message_msg.type,Message_msg.data(),source);
 		}else if(Message_msg.isRequest===true){//it's a request
-			this._requestHandle(Message_msg);
+			this._requestHandle(Message_msg,source);
 		}else{//it's a response
-			this._responseHandle(Message_msg);
+			this._responseHandle(Message_msg,source);
 		}
 	}
 	/**
@@ -614,8 +618,9 @@ class RPC extends events{
 	 * @description	handle control operation
 	 * @param {*} code received control code
 	 * @param {*} data received control data
+	 * @param {*} source define a source, which will be attached to request object
 	 */
-	_controlHandle(code,data){
+	_controlHandle(code,data,source){
 		switch(code){
 			case ControlMsg.codes.abort:{//cancel an operation
 				let InRequest_req=this.inReqList.get(data);//data: id
@@ -633,13 +638,14 @@ class RPC extends events{
 	/**
 	 * @description	handle received request
 	 * @param {Message} Message_msg
+	 * @param {*} source define a source, which will be attached to request object
 	 */
-	_requestHandle(Message_msg){
+	_requestHandle(Message_msg,source){
 		if(this.inReqList.has(Message_msg.id)){
 			this._respond(Message_msg,RPC.Error(4104));//Duplicate id
 			return;
 		}
-		let InRequest_req=new InRequest(Message_msg,this);//create a response for the request
+		let InRequest_req=new InRequest(Message_msg,this,source);//create a response for the request
 		if(Message_msg.id){
 			InRequest_req.setTimeout(this.defaultResponseTimeout);
 			this.inReqList.set(Message_msg.id,InRequest_req);
@@ -653,8 +659,9 @@ class RPC extends events{
 	/**
 	 * @description	handle received response
 	 * @param {Message} Message_msg
+	 * @param {*} source define a source, which will be attached to request object
 	 */
-	_responseHandle(Message_msg){
+	_responseHandle(Message_msg,source){
 		let Request_req=this.reqList.get(Message_msg.id);
 		if(!Request_req){
 			console.debug('no req for id:'+Message_msg.id);
