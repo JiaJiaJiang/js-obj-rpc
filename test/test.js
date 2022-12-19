@@ -36,6 +36,7 @@ rpc2.on('request',(req,cb)=>{//rpc2 handle request from rpc1
 function test(data){
 	return new Promise((ok,rej)=>{
 		//send request
+		console.log('rpc1 send:\n',data);
 		rpc1.request(data,(err,r)=>{
 			if(err){
 				console.log('rpc1 response error:\n',err);

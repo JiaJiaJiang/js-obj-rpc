@@ -34,10 +34,7 @@ Byte 0
 Byte -
 	data
 */
-
-'use strict';
-// if((typeof Buffer) !== 'function')var Buffer=require('Buffer').Buffer;
-var events=require('events');
+var events=require('eventemitter3');
 
 //Polyfill
 Number.MAX_SAFE_INTEGER||(Number.MAX_SAFE_INTEGER=0x1fffffffffffff);
@@ -53,7 +50,32 @@ if(SUPPORT_ARRAYBUFFER && !ArrayBuffer.isView){//ArrayBuffer.isView
 	ArrayBuffer.isView=a=>!!((TypedArray&&(a instanceof TypedArray))||(global.DataView&&(a instanceof DataView)));
 }
 
-
+const encoder = new TextEncoder();
+const decoder=new TextDecoder()
+const tmpFloat64Array1=new Float64Array(1),
+	tmpUint8Array1=new Uint8Array(1),
+	tmpUint8Array9=new Uint8Array(9);
+function strToUint8(str){
+	return encoder.encode(str);
+}
+function uint8ToStr(uint8){
+	return decoder.decode(uint8);
+}
+function concatArrayBuffers(buffers){
+	let offsets=new Array(buffers.length),totalLength=0;
+	for(let ai=0;ai<buffers.length;ai++){
+		offsets[ai]=totalLength;
+		totalLength+=buffers[ai].byteLength;
+		if(buffers[ai] instanceof ArrayBuffer){
+			buffers[ai]=new Uint8Array(buffers[ai]);
+		}
+	}
+	const result=new Uint8Array(totalLength);
+	for(let i=0;i<buffers.length;i++){
+		result.set(buffers[i],offsets[i]);
+	}
+	return result;
+}
 /**
  * @description	Message object
  * @class Message
@@ -69,15 +91,17 @@ class Message{
 	isRequest;
 	/**
 	 * Creates an instance of Message.
-	 * @param {Buffer} data
+	 * @param {ArrayBuffer} data
 	 */
 	constructor(data){
-		if(!Buffer.isBuffer(data)){
+		if(ArrayBuffer.isView(data))data=data.buffer;
+		else if(!(data instanceof ArrayBuffer)){
 			throw(new TypeError('Wrong data'));
 		}
 		if(data.byteLength===0){
 			throw(new Error('Bad message'));
 		}
+		data=new Uint8Array(data);
 		this.head=data[0];
 		this.isRequest=(this.head&0b10000000)===0;
 		this.hasID=this.isRequest?(this.head&0b01000000)===0b01000000:true;
@@ -86,11 +110,12 @@ class Message{
 			if(data.byteLength<5){
 				throw(new Error('Bad message'));
 			}
-			this.id=data.readUInt32BE(1);
-			this.random=data.readUInt32BE(5);
+			const view=new DataView(data.buffer);
+			this.id=view.getUint32(1);
+			this.random=view.getUint32(5);
 		}
 		this.type=this.head&0b00011111;//type of the message
-		this.payload=data.slice(this.hasID?9:1);
+		this.payload=data.buffer.slice(this.hasID?9:1);
 		this._data;//data cache
 	}
 	/**
@@ -122,16 +147,17 @@ class Message{
 				case 8:return true;
 				case 9:return false;
 				case 10:return this.payload;//binary
-				case 11:return this.payload.toString('utf8');//string
-				case 12:return JSON.parse(this.payload);//json
+				case 11:return uint8ToStr(this.payload);//string
+				case 12:return JSON.parse(uint8ToStr(this.payload));//json
 				case 13://js number
 					if(this.payload.byteLength!==8)
 						throw('Wrong data length for number');
-					return this.payload.readDoubleBE(0);
+					const view=new DataView(this.payload);
+					return view.getFloat64(0);
 				case 14:return undefined;
 				case 15:return null;
 				case 16:{
-					let bStr=this.payload.toString();
+					const bStr=uint8ToStr(this.payload);
 					if(bStr[0]==='-')return -BigInt('0x'+bStr.slice(1));
 					return BigInt('0x'+bStr);
 				}
@@ -145,35 +171,36 @@ class Message{
 	 * @description	convert different data to message format buffer
 	 * @static
 	 * @param {any} data	data that defined at top of this file
-	 * @returns {[number,Buffer]}	[type code, data buffer]
+	 * @returns {[number,ArrayBuffer]}	[type code, data buffer]
 	 */
 	static toFrameData(data){
 		if(data===undefined)return [14];
 		if(data===null)return [15];
 		if(data===true)return [8];
 		if(data===false)return [9];
-		if(data instanceof ErrorMsg)
-			return [12,Buffer.from(JSON.stringify({code:data.code||4100,msg:data.msg}))];
+		if(data instanceof ErrorMsg){
+			return [12,strToUint8(JSON.stringify({code:data.code||4100,msg:data.msg}))];
+		}
 		if(data instanceof ControlMsg){
 			return [data.code,data.buf];
 		}
 		if(data instanceof ArrayBuffer||ArrayBuffer.isView(data)){
-			return [10,data];
+			return [10,data.buffer||data];
 		}
 		if(data instanceof Error){
 			throw('Dont use Error, use RPC.Error instead');
 		}
 		switch(typeof data){
-			case 'string':return [11,Buffer.from(data)];
-			case 'object':return [12,Buffer.from(JSON.stringify(data))];
+			case 'string':return [11,strToUint8(data)];
+			case 'object':return [12,strToUint8(JSON.stringify(data))];
 			case 'number':
-				let buf=Buffer.alloc(8);
-				buf.writeDoubleBE(data);
-				return [13,buf];
+				const view=new DataView(tmpFloat64Array1.buffer);
+				view.setFloat64(0,data);
+				return [13,view.buffer];
 			case 'bigint':
-				return [16,Buffer.from(data.toString(16))];
+				return [16,strToUint8(data.toString(16))];
 		}
-		console.error('data: ',data);//debug
+		// console.error('data: ',data);//debug
 		throw(new TypeError('Unsupported data type: '+typeof data));
 	}
 	/**
@@ -182,14 +209,15 @@ class Message{
 	 * @param {boolean} req	is request
 	 * @param {boolean} err	is error
 	 * @param {number} type	type code
-	 * @param {Buffer} buf	data buffer
+	 * @param {ArrayBuffer} buf	data buffer
 	 * @param {number} id	message id
 	 * @param {number} randomNum	a random number for preventing id confict
-	 * @returns {Buffer}  
+	 * @returns {ArrayBuffer}  
 	 */
 	static _pack(req,err,type,buf,id,randomNum){
 		let hasID=typeof id==='number' && id>0;
-		let head=Buffer.alloc(hasID?9:1);//alloc the head buffer
+		let head=(hasID?tmpUint8Array9:tmpUint8Array1);//alloc the head buffer
+		head.fill(0);
 		if(req===true){//request
 			if(hasID)head[0]|=0b01000000;//set id flag
 		}else{//response
@@ -197,15 +225,16 @@ class Message{
 			if(err){head[0]|=0b01000000;}//set err msg flag
 		}
 		head[0]|=type;
-		let arr=[head];
+		let bufs=[head];
 		if(hasID){
 			if(id>=0xFFFFFFFF)
 				throw(new Error('id out of range'));
-			head.writeUInt32BE(id,1);//write id
-			head.writeUInt32BE(randomNum,5);//write randomNum
+			const view=new DataView(head.buffer);
+			view.setUint32(1,id);//write id
+			view.setUint32(5,randomNum);//write randomNum
 		}
-		if(buf&&buf.byteLength)arr.push(buf);
-		return Buffer.concat(arr);
+		if(buf&&buf.byteLength)bufs.push(buf);
+		return concatArrayBuffers(bufs);
 	}
 	/**
 	 * @description	pack data into message buffer
@@ -214,7 +243,7 @@ class Message{
 	 * @param {any} data	data to send
 	 * @param {number} id	message id
 	 * @param {number} randomNum	a random number for preventing id confict
-	 * @returns {Buffer}	packed message
+	 * @returns {ArrayBuffer}	packed message
 	 */
 	static pack(req,data,id,randomNum){//data:buffer, sig:sign the data, finished:the response has finished
 		let [type,buf]=Message.toFrameData(data);//get data type and meg buffer
@@ -287,8 +316,9 @@ class ControlMsg{
 			case ControlMsg.codes.abort://abort message
 				if(!Message.isValidId(data))
 					throw('Invalid id: '+data);
-				this.buf=Buffer.allocUnsafe(4);
-				this.buf.writeUInt32BE(data);//set msg id to be aborted
+				this.buf=new ArrayBuffer(4);
+				(new DataView(this.buf)).setUint32(0,data);
+				// this.buf.writeUInt32BE(data);//set msg id to be aborted
 				break;
 		}
 	}
@@ -296,13 +326,13 @@ class ControlMsg{
 	 * @description	convert control message payload to number
 	 * @static
 	 * @param {number} code	control code
-	 * @param {Buffer} buf	control message payload
+	 * @param {ArrayBuffer} buf	control message payload
 	 * @returns {number}  
 	 */
 	static parseData(code,buf){
 		switch(code){
 			case ControlMsg.codes.abort:
-				return buf.readUInt32BE(0);
+				return (new DataView(buf)).getUint32(0);
 		}
 	}
 }
@@ -340,7 +370,7 @@ class Request{
 	 */
 	callback(...args){
 		if(this.responded)
-			throw(new Error('Responded'));
+			throw(new Error('RPC responded'));
 		this.responded=true;
 		if(this.cb)
 			this.cb(...args);
@@ -495,7 +525,7 @@ class RPC extends events{
 	
 	/**
 	 * @description buffer handle
-	 * @param {Buffer} data	data from remote rpc sender
+	 * @param {ArrayBuffer} data	data from remote rpc sender
 	 * @param {*} source define a source, which will be attached to request object
 	 */
 	handle(data,source){
@@ -578,18 +608,16 @@ class RPC extends events{
 			throw(new TypeError('not a function'));
 		/* 
 			sync sender:return send Error
-			
 		*/
 		this._sender=func;
 	}
 	/**
 	 * @description	send buffer by sender function
-	 * @param {Buffer} buf
+	 * @param {ArrayBuffer} buf
 	 * @returns {Promise<Error>}  
 	 */
 	async _send(buf){
 		if(this._sender){
-			let r;
 			if((await this._sender(buf)) instanceof Error === false)return;
 			return await this._sender(buf);//retry
 		}
@@ -676,9 +704,21 @@ class RPC extends events{
 		}
 		this.delete(Request_req);
 	}
+	/**
+	 *destroy this instance and directly return error for all requests
+	 */
+	destroy(){
+		for(let [id,request] of this.reqList){
+			request.callback(new Error('connection destroyed'));
+		}
+		for(let [id,InRequest_req] of this.inReqList){
+			InRequest_req._abort('connection destroyed');
+		}
+		this.reqList.clear();
+		this.inReqList.clear();
+	}
 }
 
 module.exports = {
-	Buffer,
 	RPC,
 };

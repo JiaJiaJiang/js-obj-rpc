@@ -3,9 +3,6 @@
   "version": "3.1.0",
   "description": "rpc for js",
   "main": "index.js",
-  "scripts": {
-    "build": "gulp build"
-  },
   "repository": {
     "type": "git",
     "url": "git@github.com:JiaJiaJiang/js-obj-rpc.git"
@@ -15,24 +12,20 @@
   ],
   "author": "luojia@luojia.me",
   "license": "MIT",
-  "devDependencies": {
-    "@babel/core": "^7.15.0",
-    "@babel/plugin-proposal-class-properties": "^7.14.5",
-    "@babel/plugin-transform-modules-commonjs": "^7.15.0",
-    "@babel/preset-env": "^7.15.0",
-    "babelify": "^10.0.0",
-    "browserify": "^17.0.0",
-    "browserslist-useragent": "^3.0.3",
-    "core-js": "^3.16.3",
-    "gulp": "^4.0.2",
-    "gulp-sourcemaps": "^3.0.0",
-    "gulp-uglify": "^3.0.2",
-    "utf8util": "^1.0.1",
-    "vinyl-buffer": "^1.0.1",
-    "babel-plugin-remove-comments": "^2.0.0",
-    "babel-preset-minify": "^0.5.1",
-    "gulp-babel": "^8.0.0",
-    "vinyl-source-stream": "^2.0.0"
+  "scripts": {
+    "build": "cross-env BROWSER_COVER=50 && rollup -c "
   },
-  "dependencies": {}
+  "devDependencies": {
+    "@babel/core": "^7.19.3",
+    "@babel/preset-env": "^7.19.4",
+    "@rollup/plugin-babel": "^6.0.0",
+    "@rollup/plugin-commonjs": "^24.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "babel-plugin-remove-comments": "^2.0.0",
+    "babel-preset-minify": "^0.5.2",
+    "core-js": "^3.25.5",
+    "cross-env": "^7.0.3",
+    "eventemitter3": "^5.0.0",
+    "rollup": "^3.1.0"
+  }
 }
