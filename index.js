@@ -61,6 +61,9 @@ function strToUint8(str){
 function uint8ToStr(uint8){
 	return decoder.decode(uint8);
 }
+function getSliceInArrayBuffer(typedArray){
+	return typedArray.buffer.slice(typedArray.byteOffset,typedArray.byteOffset+typedArray.byteLength);
+}
 function concatArrayBuffers(buffers){
 	let offsets=new Array(buffers.length),totalLength=0;
 	for(let ai=0;ai<buffers.length;ai++){
@@ -94,8 +97,8 @@ class Message{
 	 * @param {ArrayBuffer} data
 	 */
 	constructor(data){
-		if(ArrayBuffer.isView(data))data=data.buffer;
-		else if(!(data instanceof ArrayBuffer)){
+		if(ArrayBuffer.isView(data) || (data instanceof ArrayBuffer)===true)data=new Uint8Array(data);
+		else{
 			throw(new TypeError('Wrong data'));
 		}
 		if(data.byteLength===0){
@@ -110,12 +113,12 @@ class Message{
 			if(data.byteLength<5){
 				throw(new Error('Bad message'));
 			}
-			const view=new DataView(data.buffer);
+			const view=new DataView(data.buffer,data.byteOffset,data.byteLength);
 			this.id=view.getUint32(1);
 			this.random=view.getUint32(5);
 		}
 		this.type=this.head&0b00011111;//type of the message
-		this.payload=data.buffer.slice(this.hasID?9:1);
+		this.payload=data.buffer.slice(data.byteOffset+this.hasID?9:1,data.byteLength);
 		this._data;//data cache
 	}
 	/**
@@ -185,7 +188,7 @@ class Message{
 			return [data.code,data.buf];
 		}
 		if(data instanceof ArrayBuffer||ArrayBuffer.isView(data)){
-			return [10,data.buffer||data];
+			return [10,data.buffer?getSliceInArrayBuffer(data):data];
 		}
 		if(data instanceof Error){
 			throw('Dont use Error, use RPC.Error instead');
@@ -194,9 +197,9 @@ class Message{
 			case 'string':return [11,strToUint8(data)];
 			case 'object':return [12,strToUint8(JSON.stringify(data))];
 			case 'number':
-				const view=new DataView(tmpFloat64Array1.buffer);
+				const view=new DataView(tmpFloat64Array1.buffer,tmpFloat64Array1.byteOffset,tmpFloat64Array1.byteLength);
 				view.setFloat64(0,data);
-				return [13,view.buffer];
+				return [13,getSliceInArrayBuffer(view)];
 			case 'bigint':
 				return [16,strToUint8(data.toString(16))];
 		}
@@ -229,7 +232,7 @@ class Message{
 		if(hasID){
 			if(id>=0xFFFFFFFF)
 				throw(new Error('id out of range'));
-			const view=new DataView(head.buffer);
+			const view=new DataView(head.buffer,head.byteOffset,head.byteLength);
 			view.setUint32(1,id);//write id
 			view.setUint32(5,randomNum);//write randomNum
 		}
@@ -391,9 +394,7 @@ class Request{
 	 */
 	_timeout(){
 		this.timeout=0;
-		if(this.cb){
-			this.cb(new Error('Time out'));
-		}
+		this.callback(new Error('Time out'));
 		this.abort();
 	}
 	_destructor(){
@@ -497,6 +498,7 @@ class RPC extends events{
 	static Error(code,msg){
 		return new ErrorMsg(code,msg||Message.msgErrorCodes[code]||'Unexpected error');
 	}
+	debug=false;
 	_currentID=1;
 	defaultRequestTimeout;
 	defaultResponseTimeout;
@@ -556,11 +558,19 @@ class RPC extends events{
 		}
 		let buffer=Message.pack(true,data,id,rand);
 		if(id!==0){
-			request=new Request(this,id,callback,rand);
+			request=new Request(this,id,(err,res)=>{
+				if(err&&this.debug){
+					console.debug('RPC receive error','req:',data,'err:',err);
+				}
+				if(callback)callback(err,res);
+			},rand);
 			this.reqList.set(id,request);
 			request.setTimeout(opt.timeout||this.defaultRequestTimeout);
 		}
 		this._send(buffer).then(err=>{
+			if(err&&this.debug){
+				console.debug('RPC send error','req:',data,'err:',err);
+			}
 			err&&request.callback(err);
 		});
 		return request;
@@ -634,7 +644,7 @@ class RPC extends events{
 		if(!msg.hasID)
 			throw(new Error('The request dosen\'t need a response'));
 		if(this.inReqList.get(msg.id) !== InRequest_req){
-			console.debug('Missing id');
+			if(this.debug)console.debug('Missing id');
 			//ignore ids that not exist
 			return;
 		}
@@ -659,7 +669,7 @@ class RPC extends events{
 				break;
 			}
 			default:{
-				console.debug('Unknown control code:'+code);
+				if(this.debug)console.debug('Unknown control code:'+code);
 			}
 		}
 	}
@@ -692,7 +702,7 @@ class RPC extends events{
 	_responseHandle(Message_msg,source){
 		let Request_req=this.reqList.get(Message_msg.id);
 		if(!Request_req){
-			console.debug('no req for id:'+Message_msg.id);
+			if(this.debug)console.debug('no req for id:'+Message_msg.id);
 			return;
 		}
 		if(Request_req.random!==Message_msg.random)
