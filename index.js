@@ -690,7 +690,7 @@ class RPC extends events{
 		}
 		this.emit('request',InRequest_req,(r)=>{//emit a request event for the request handle created by you
 			//remove saved inReq
-			if(InRequest_req.msg.id&&(this.inReqList.get(Message_msg.id)===InRequest_req))
+			if(InRequest_req.msg&&InRequest_req.msg.id&&(this.inReqList.get(Message_msg.id)===InRequest_req))
 				this._respond(InRequest_req,r);
 		});
 	}
