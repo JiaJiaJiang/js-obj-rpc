@@ -99,7 +99,7 @@ class Message {
 	 */
 	constructor(data) {
 		this.sessionId = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0);
-		data=data.subarray(4);
+		data = data.subarray(4);
 		if (ArrayBuffer.isView(data) || (data instanceof ArrayBuffer) === true) data = new Uint8Array(data);
 		else {
 			throw (new TypeError('Wrong data'));
@@ -390,7 +390,7 @@ class Request {
 			this.cb(...args);
 	}
 	/**
-	 * @description set time out of the request
+	 * @description set timeout of the request
 	 * @param {*} time
 	 */
 	setTimeout(time) {
@@ -404,9 +404,9 @@ class Request {
 	 * @description when timeout reaches, an abort control will be sent
 	 */
 	_timeout() {
-		this.timeout = 0;
 		this.callback(new Error('Time out'));
-		this.abort('Time out');
+		this.rpc.delete(this);
+		this.timeout = 0;
 	}
 	_destructor() {
 		this.cb = null;
@@ -509,7 +509,6 @@ class RPC {
 	outReqList = new Map();//sessionId_id => out Request
 	inReqList = new Map();//sessionId_id => in Request
 	_checkerTimer;
-	_sender;
 	onRequest(inReq) { }//overwrite this
 	constructor(opt = {}) {
 		this.defaultRequestTimeout = opt.defaultRequestTimeout || 15000;
@@ -569,7 +568,7 @@ class RPC {
 				request = new Request(this, id, (err, res) => {
 					if (err) {
 						if (this.debug) {
-							console.debug('RPC receive error', 'req:', data, 'err:', err);
+							console.debug('RPC receive error:', 'req:', data, 'res:', err);
 						}
 						fail(err);
 						return;
@@ -613,7 +612,7 @@ class RPC {
 			else { throw (new Error('Deleting unknown req')) }
 			req._destructor();
 		} else if (req instanceof InRequest) {
-			const id = `${req.msg.sessionId}_${req.id}`;
+			const id = `${req.msg.sessionId}_${req.msg.id}`;
 			if (this.inReqList.get(id) === req)
 				this.inReqList.delete(id);
 			else { throw (new Error('Deleting unknown inReq')) }
@@ -644,7 +643,7 @@ class RPC {
 	 */
 	async _send(buf) {
 		if (this._sender) {
-			if ((await this._sender(buf)) instanceof Error === false) return;
+			// if ((await this._sender(buf)) instanceof Error === false) return;
 			return await this._sender(buf);//retry
 		}
 		throw (new Error('sender not defined'));
@@ -662,7 +661,7 @@ class RPC {
 			//ignore ids that not exist
 			return;
 		}
-		if(msg.hasID){//only messages have id should be responded
+		if (msg.hasID) {//only messages have id should be responded
 			let Buffer_buf = Message.pack(InRequest_req.msg.sessionId, false, data, msg.id, msg.random);
 			this._send(Buffer_buf);
 		}
@@ -698,7 +697,7 @@ class RPC {
 	 * @param {*} source define a source, which will be attached to request object
 	 */
 	async _requestHandle(Message_msg, source) {
-		const sid_id=`${Message_msg.sessionId}_${Message_msg.id}`;
+		const sid_id = `${Message_msg.sessionId}_${Message_msg.id}`;
 		if (this.inReqList.has(sid_id)) {
 			this._respond(Message_msg, RPC.Error(4104));//Duplicate id
 			return;
