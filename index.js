@@ -536,6 +536,15 @@ class RPC {
 	 */
 	handle(data, source) {
 		let Message_msg = new Message(data);
+		
+		// 验证sessionId
+		if (Message_msg.sessionId !== this._sessionId) {
+			if (this.debug) {
+				console.debug('Invalid sessionId:', Message_msg.sessionId);
+			}
+			return;
+		}
+
 		if (Message_msg.isRequest === true) {//it's a request
 			this._requestHandle(Message_msg, source);
 		} else {//it's a response
