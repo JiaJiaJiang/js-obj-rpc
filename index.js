@@ -850,7 +850,7 @@ class RemoteCallback extends RPC {
 	}
 	destroy() {
 		super.destroy();
-		this.opts = {};
+		this.opts = null;
 	}
 	request() {
 		throw (new Error('This method is disabled on sub class, use "remoteCall" instead.'));
