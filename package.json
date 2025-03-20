@@ -1,30 +1,31 @@
 {
-  "name": "js-obj-rpc",
-  "version": "5.0.2",
-  "description": "rpc for js",
-  "main": "index.js",
-  "repository": {
-    "type": "git",
-    "url": "git@github.com:JiaJiaJiang/js-obj-rpc.git"
-  },
-  "keywords": [
-    "rpc"
-  ],
-  "author": "luojia@luojia.me",
-  "license": "MIT",
-  "scripts": {
-    "build": "cross-env BROWSER_COVER=50 && rollup -c "
-  },
-  "devDependencies": {
-    "@babel/core": "^7.21.8",
-    "@babel/preset-env": "^7.21.5",
-    "@rollup/plugin-babel": "^6.0.3",
-    "@rollup/plugin-commonjs": "^24.0.0",
-    "@rollup/plugin-node-resolve": "^15.0.2",
-    "babel-plugin-remove-comments": "^2.0.0",
-    "babel-preset-minify": "^0.5.2",
-    "core-js": "^3.30.2",
-    "cross-env": "^7.0.3",
-    "rollup": "^3.23.0"
-  }
+	"name": "js-obj-rpc",
+	"version": "5.0.2",
+	"description": "rpc for js",
+	"main": "index.js",
+	"repository": {
+		"type": "git",
+		"url": "git@github.com:JiaJiaJiang/js-obj-rpc.git"
+	},
+	"keywords": [
+		"rpc"
+	],
+	"author": "luojia@luojia.me",
+	"license": "MIT",
+	"scripts": {
+		"build": "cross-env BROWSER_COVER=50 && rollup -c ",
+		"test": "node tests/test.js"
+	},
+	"devDependencies": {
+		"@babel/core": "^7.21.8",
+		"@babel/preset-env": "^7.21.5",
+		"@rollup/plugin-babel": "^6.0.3",
+		"@rollup/plugin-commonjs": "^24.0.0",
+		"@rollup/plugin-node-resolve": "^15.0.2",
+		"babel-plugin-remove-comments": "^2.0.0",
+		"babel-preset-minify": "^0.5.2",
+		"core-js": "^3.30.2",
+		"cross-env": "^7.0.3",
+		"rollup": "^3.23.0"
+	}
 }

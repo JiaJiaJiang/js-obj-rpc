@@ -36,13 +36,6 @@ Byte -
 	data
 */
 
-//Polyfill
-// Number.MAX_SAFE_INTEGER || (Number.MAX_SAFE_INTEGER = 0x1fffffffffffff);
-// if (!Number.isSafeInteger)
-// 	Number.isSafeInteger = function (a) { return Number.isInteger(a) && Math.abs(a) <= Number.MAX_SAFE_INTEGER };
-// if (!Number.isInteger)
-// 	Number.isInteger = function (b) { return "number" == typeof b && isFinite(b) && Math.floor(b) === b };
-
 
 const SUPPORT_ARRAYBUFFER = !!global.ArrayBuffer;
 const TypedArray = SUPPORT_ARRAYBUFFER && global.Float32Array.prototype.constructor.__proto__;
@@ -191,8 +184,8 @@ class Message {
 			return [10, data.buffer ? getSliceInArrayBuffer(data) : data];
 		}
 		if (data instanceof Error) {
-			console.error(data);
-			throw ('Dont use Error, use RPC.Error instead');
+			if (this.debug) console.error(data);
+			throw (new TypeError('Dont use Error, use RPC.Error instead'));
 		}
 		if (data instanceof ErrorMsg) {
 			return [12, strToUint8(JSON.stringify({ code: data.code || 4100, msg: data.msg }))];
@@ -509,11 +502,12 @@ class RPC {
 	outReqList = new Map();//sessionId_id => out Request
 	inReqList = new Map();//sessionId_id => in Request
 	_checkerTimer;
-	onRequest(inReq) { }//overwrite this
+	onRequest(inReq) { throw new Error('This method must be overwritten'); }//overwrite this
 	constructor(opt = {}) {
 		this.defaultRequestTimeout = opt.defaultRequestTimeout || 15000;
 		this.defaultResponseTimeout = opt.defaultResponseTimeout || 15000;
 		this._sessionId = opt.sessionId || RPC.generateRandom();
+		this.debug = opt.debug ?? false;
 	}
 	//sender side
 	/**
@@ -536,15 +530,6 @@ class RPC {
 	 */
 	handle(data, source) {
 		let Message_msg = new Message(data);
-		
-		// 验证sessionId
-		if (Message_msg.sessionId !== this._sessionId) {
-			if (this.debug) {
-				console.debug('Invalid sessionId:', Message_msg.sessionId);
-			}
-			return;
-		}
-
 		if (Message_msg.isRequest === true) {//it's a request
 			this._requestHandle(Message_msg, source);
 		} else {//it's a response
@@ -627,7 +612,7 @@ class RPC {
 			else { throw (new Error('Deleting unknown inReq')) }
 			req._destructor();
 		} else {
-			console.error('arg: ', req);
+			if (this.debug) console.error('arg: ', req);
 			throw (new Error('Wrong type'));
 		}
 	}
@@ -773,6 +758,112 @@ class RPC {
 	}
 }
 
+/* 
+The following classes have been merged from another separate package and introduce some breaking changes. Here's a list:
+*   RemoteCallback's `send` is removed, its functionality now resides in `RPC.request`.
+*   RemoteCallback's `handleRPC` is removed, its functionality now resides in `RPC.handle`.
+*   RemoteCallback's `setRPCSender` is removed, its functionality now resides in `RPC.setSender`.
+*   RemoteCallback's `request` has been renamed to `remoteCall`.
+*/
+/**
+ * RemoteCallback is used to call remote methods and obtain results in a fixed data format.
+ * @class RemoteCallback
+ * @extends {RPC}
+ */
+class RemoteCallback extends RPC {
+	opts = {};
+	handleArguments = (msg, inReq) => [msg.arg, inReq]; // Defines the arguments passed to handle; defaults to the message argument and request object.
+	get rpcSender() { return this._sender; };
+	constructor(opt) {
+		super(opt);
+	}
+	async onRequest(inReq) {
+		try {
+			return await this._handleRequest(inReq);//pass an InRequest object for abort checking 
+		} catch (err) {
+			if (typeof err == 'string') {
+				throw (RPC.Error(4100, err));
+			} else if (err instanceof Error) {
+				if (this.debug) console.error(err);
+				throw (RPC.Error(4100, 'handle error'));
+			} else {
+				throw (new TypeError('invalid error type:' + typeof err));
+			}
+		}
+	}
+	/**
+	 * @description	处理请求
+	 * @param {InRequest} inReq
+	 */
+	async _handleRequest(inReq) {
+		let msg = inReq.data();
+		if (typeof msg !== 'object' || msg === null) {
+			if (this.debug) console.error('invalid request', inReq);
+			throw ('invalid message type');
+		}
+		if ('_' in msg === false) {
+			throw ('No opt found');
+		}
+		let handle = this.opts[msg._];
+		if (handle) {
+			let result = await handle(...this.handleArguments(msg, inReq));
+			inReq.responded = true;//mark as responded
+			return result;
+		} else {
+			throw (`unknown handle type '${msg._}'`);
+		}
+	}
+	/**
+	 * @description Sends an RPC request to the remote end.
+	 * @param {string} opt Operation name.
+	 * @param {*} arg Arguments to send with the request.
+	 * @param {function(Error,any)} callback The remote response will be passed directly to this function. If not defined, the function returns a Promise providing the result.
+	 * @param {object} [rpcOpt] Option for `this.rpc.request`.
+	 * @returns {undefined|Promise<*>} This Promise returns the request result data.
+	 */
+	remoteCall(opt, arg, rpcOpt) {
+		return super.request({ _: opt, arg }, rpcOpt);
+	}
+	/**
+	 * @description Registers the operation handling function for this side.
+	 * @param {string} opt
+	 * @param {function(arg,InRequest)} func  (request parameter, InRequest object)
+	 */
+	register(opt, func) {
+		if (typeof opt !== 'string') {
+			throw (new TypeError('name should be a string'));
+		}
+		if (typeof func !== 'function') {
+			throw (new TypeError('fun should be a function'));
+		}
+		if (opt in this.opts) {
+			throw (new Error(`operation ${opt} already been registered`));
+		}
+		this.opts[opt] = func;
+	}
+	/**
+	 * @description	Remove the specified operation handler
+	 * @param {string} opt
+	 */
+	deregister(opt) {
+		delete this.opts[opt];
+	}
+	destroy() {
+		super.destroy();
+		this.opts = {};
+	}
+	request() {
+		throw (new Error('This method is disabled on sub class, use "remoteCall" instead.'));
+	}
+	handleRPC() {
+		throw (new Error('This method is removed, use "remoteCall" handle.'));
+	}
+	setRPCSender() {
+		throw (new Error('This method is removed, use "setSender" handle.'));
+	}
+}
+
 module.exports = {
 	RPC,
+	RemoteCallback,
 };
