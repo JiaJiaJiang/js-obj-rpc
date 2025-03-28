@@ -58,7 +58,8 @@ function getSliceInArrayBuffer(typedArray) {
 	return typedArray.buffer.slice(typedArray.byteOffset, typedArray.byteOffset + typedArray.byteLength);
 }
 function concatArrayBuffers(buffers) {
-	let offsets = new Array(buffers.length), totalLength = 0;
+	const offsets = new Array(buffers.length);
+	let totalLength = 0;
 	for (let ai = 0; ai < buffers.length; ai++) {
 		offsets[ai] = totalLength;
 		totalLength += buffers[ai].byteLength;
@@ -149,10 +150,12 @@ class Message {
 				case 11: return uint8ToStr(this.payload);//string
 				case 12: return JSON.parse(uint8ToStr(this.payload));//json
 				case 13://js number
-					if (this.payload.byteLength !== 8)
-						throw ('Wrong data length for number');
-					const view = new DataView(this.payload);
-					return view.getFloat64(0);
+					{
+						if (this.payload.byteLength !== 8)
+							throw ('Wrong data length for number');
+						const view = new DataView(this.payload);
+						return view.getFloat64(0);
+					}
 				case 14: return undefined;
 				case 15: return null;
 				case 16: {
@@ -194,9 +197,11 @@ class Message {
 			case 'string': return [11, strToUint8(data)];
 			case 'object': return [12, strToUint8(JSON.stringify(data))];
 			case 'number':
-				const view = new DataView(tmpFloat64Array1.buffer, tmpFloat64Array1.byteOffset, tmpFloat64Array1.byteLength);
-				view.setFloat64(0, data);
-				return [13, getSliceInArrayBuffer(view)];
+				{
+					const view = new DataView(tmpFloat64Array1.buffer, tmpFloat64Array1.byteOffset, tmpFloat64Array1.byteLength);
+					view.setFloat64(0, data);
+					return [13, getSliceInArrayBuffer(view)];
+				}
 			case 'bigint':
 				return [16, strToUint8(data.toString(16))];
 		}
@@ -215,8 +220,8 @@ class Message {
 	 * @returns {ArrayBuffer}  
 	 */
 	static _pack(sessionId, req, err, type, buf, id, randomNum) {
-		let hasID = typeof id === 'number' && id > 0;
-		let array = (hasID ? tmpUint8Array13 : tmpUint8Array5);//alloc the head buffer
+		const hasID = typeof id === 'number' && id > 0;
+		const array = (hasID ? tmpUint8Array13 : tmpUint8Array5);//alloc the head buffer
 		array.fill(0);
 		const view = new DataView(array.buffer, array.byteOffset, array.byteLength);
 		view.setUint32(0, sessionId);
@@ -228,7 +233,7 @@ class Message {
 			if (err) { head[0] |= 0b01000000; }//set err msg flag
 		}
 		head[0] |= type;
-		let bufs = [array];
+		const bufs = [array];
 		if (hasID) {
 			if (id >= 0xFFFFFFFF)
 				throw (new Error('id out of range'));
@@ -248,8 +253,8 @@ class Message {
 	 * @returns {ArrayBuffer}	packed message
 	 */
 	static pack(sessionId, req, data, id, randomNum) {
-		let [type, buf] = Message.toFrameData(data);//get data type and meg buffer
-		let err = data instanceof ErrorMsg;
+		const [type, buf] = Message.toFrameData(data);//get data type and meg buffer
+		const err = data instanceof ErrorMsg;
 		return Message._pack(sessionId, req, err, type, buf, id, randomNum);
 	}
 	static msgErrorCodes = {
@@ -335,6 +340,7 @@ class ControlMsg {
 			case ControlMsg.codes.abort:
 				return (new DataView(buf)).getUint32(0);
 		}
+		throw (new TypeError('Control message code not defined: ' + code));
 	}
 }
 
@@ -370,6 +376,7 @@ class Request {
 		} finally {
 			this.rpc.delete(this);
 		}
+		return undefined;
 	}
 	/**
 	 * @description	fill response data when the remote rpc respond
@@ -473,6 +480,7 @@ class InRequest {
 			await this._abortMsg('time out');
 			this.rpc._respond(this, RPC.Error(4105));
 		} catch (err) {
+			//ignore more errors
 		}
 	}
 	_destructor() {
@@ -501,7 +509,6 @@ class RPC {
 	defaultResponseTimeout;
 	outReqList = new Map();//sessionId_id => out Request
 	inReqList = new Map();//sessionId_id => in Request
-	_checkerTimer;
 	onRequest(inReq) { throw new Error('This method must be overwritten'); }//overwrite this
 	constructor(opt = {}) {
 		this.defaultRequestTimeout = opt.defaultRequestTimeout || 15000;
@@ -529,7 +536,7 @@ class RPC {
 	 * @param {*} source define a source, which will be attached to request object
 	 */
 	handle(data, source) {
-		let Message_msg = new Message(data);
+		const Message_msg = new Message(data);
 		if (Message_msg.isRequest === true) {//it's a request
 			this._requestHandle(Message_msg, source);
 		} else {//it's a response
@@ -555,7 +562,7 @@ class RPC {
 		if (id !== 0) {
 			rand = RPC.generateRandom();
 		}
-		let buffer = Message.pack(this._sessionId, true, data, id, rand);
+		const buffer = Message.pack(this._sessionId, true, data, id, rand);
 
 		return new Promise((ok, fail) => {
 			if (id !== 0) {
@@ -591,7 +598,7 @@ class RPC {
 	 * @returns {*} control response
 	 */
 	control(name, data) {
-		let msg = new ControlMsg(name, data);
+		const msg = new ControlMsg(name, data);
 		return this.request(msg);
 	}
 	/**
@@ -625,7 +632,7 @@ class RPC {
 	setSender(func) {
 		if (typeof func !== 'function')
 			throw (new TypeError('not a function'));
-		/* 
+		/*
 			sync sender:return send Error
 		*/
 		this._sender = func;
@@ -637,8 +644,7 @@ class RPC {
 	 */
 	async _send(buf) {
 		if (this._sender) {
-			// if ((await this._sender(buf)) instanceof Error === false) return;
-			return await this._sender(buf);//retry
+			return this._sender(buf);
 		}
 		throw (new Error('sender not defined'));
 	}
@@ -649,14 +655,14 @@ class RPC {
 	 * @param {*} data
 	 */
 	_respond(InRequest_req, data) {
-		let msg = InRequest_req.msg;
+		const msg = InRequest_req.msg;
 		if (this.inReqList.get(`${msg.sessionId}_${msg.id}`) !== InRequest_req) {
 			if (this.debug) console.debug('Missing id');
 			//ignore ids that not exist
 			return;
 		}
 		if (msg.hasID) {//only messages have id should be responded
-			let Buffer_buf = Message.pack(InRequest_req.msg.sessionId, false, data, msg.id, msg.random);
+			const Buffer_buf = Message.pack(InRequest_req.msg.sessionId, false, data, msg.id, msg.random);
 			this._send(Buffer_buf);
 		}
 		//remove saved inReq
@@ -673,7 +679,7 @@ class RPC {
 		const data = Message_msg.data();
 		switch (ctrlCode) {
 			case ControlMsg.codes.abort: {//cancel an operation
-				let InRequest_req = this.inReqList.get(`${Message_msg.sessionId}_${data}`);//data: id
+				const InRequest_req = this.inReqList.get(`${Message_msg.sessionId}_${data}`);//data: id
 				if (!InRequest_req)
 					return;//ignore
 				InRequest_req._abortMsg('remote abort');
@@ -696,7 +702,7 @@ class RPC {
 			this._respond(Message_msg, RPC.Error(4104));//Duplicate id
 			return;
 		}
-		let InRequest_req = new InRequest(Message_msg, this, source);//create a response for the request
+		const InRequest_req = new InRequest(Message_msg, this, source);//create a response for the request
 		if (Message_msg.id) {
 			InRequest_req.setTimeout(this.defaultResponseTimeout);
 			this.inReqList.set(sid_id, InRequest_req);
@@ -721,7 +727,7 @@ class RPC {
 	 * @param {*} source define a source, which will be attached to request object
 	 */
 	_responseHandle(Message_msg, source) {
-		let Request_req = this.outReqList.get(`${Message_msg.sessionId}_${Message_msg.id}`);
+		const Request_req = this.outReqList.get(`${Message_msg.sessionId}_${Message_msg.id}`);
 		if (!Request_req) {
 			if (this.debug) console.debug('no req for id:' + Message_msg.id);
 			return;
@@ -747,10 +753,10 @@ class RPC {
 	 *destroy this instance and directly return error for all requests
 	 */
 	destroy() {
-		for (let [sid_id, request] of this.outReqList) {
+		for (const [sid_id, request] of this.outReqList) {
 			request.callback(new Error('connection destroyed'));
 		}
-		for (let [sid_id, InRequest_req] of this.inReqList) {
+		for (const [sid_id, InRequest_req] of this.inReqList) {
 			InRequest_req._abortMsg('connection destroyed');
 		}
 		this.outReqList.clear();
@@ -773,7 +779,6 @@ The following classes have been merged from another separate package and introdu
 class RemoteCallback extends RPC {
 	opts = {};
 	handleArguments = (msg, inReq) => [msg.arg, inReq]; // Defines the arguments passed to handle; defaults to the message argument and request object.
-	get rpcSender() { return this._sender; };
 	constructor(opt) {
 		super(opt);
 	}
@@ -796,7 +801,7 @@ class RemoteCallback extends RPC {
 	 * @param {InRequest} inReq
 	 */
 	async _handleRequest(inReq) {
-		let msg = inReq.data();
+		const msg = inReq.data();
 		if (typeof msg !== 'object' || msg === null) {
 			if (this.debug) console.error('invalid request', inReq);
 			throw ('invalid message type');
@@ -804,9 +809,9 @@ class RemoteCallback extends RPC {
 		if ('_' in msg === false) {
 			throw ('No opt found');
 		}
-		let handle = this.opts[msg._];
+		const handle = this.opts[msg._];
 		if (handle) {
-			let result = await handle(...this.handleArguments(msg, inReq));
+			const result = await handle(...this.handleArguments(msg, inReq));
 			inReq.responded = true;//mark as responded
 			return result;
 		} else {

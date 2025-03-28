@@ -16,7 +16,7 @@ rpc2.setSender(buf => {//emulate sending
 });
 
 rpc2.onRequest = async (req) => {//rpc2 handle request from rpc1
-	let msg = req.data();
+	const msg = req.data();
 	console.log('rpc2 req received:\n', msg);
 	if (msg === 'give me an error') {//for error response test
 		throw (RPC.Error('ERRYOURERR', 'omg, error occurred!'));
@@ -99,7 +99,7 @@ RC2.register('poi', (arg, req) => {
 
 	//simple test of RemoteCallback
 	console.log('Start a simple RemoteCallback test');
-	let result = await RC1.remoteCall('poi', 4);
+	const result = await RC1.remoteCall('poi', 4);
 	if (result === 'poipoipoipoi') {
 		console.log('RemoteCallback test pass');
 	} else {
